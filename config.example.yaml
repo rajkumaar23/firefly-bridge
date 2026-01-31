@@ -1,0 +1,3 @@
+firefly:
+  host: "https://firefly.example.com"
+  token: "test-json-web-token"
