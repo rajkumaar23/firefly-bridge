@@ -9,18 +9,16 @@ import (
 )
 
 func main() {
-	var logLevel = flag.String("log-level", "info", "set the logging level (debug, info, warn, error, fatal, panic)")
+	var debugMode = flag.Bool("debug", false, "enable debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
 	flag.Parse()
 
 	// Set up logger
 	logger := logrus.New()
-	logrusLevel, err := logrus.ParseLevel(*logLevel)
-	if err != nil {
-		logger.Fatalf("invalid log level: %v", err)
+	if *debugMode {
+		logger.SetLevel(logrus.DebugLevel)
+		logger.Debugf("log level set to debug")
 	}
-	logger.SetLevel(logrusLevel)
-	logger.Debugf("log level set to %s", logrusLevel)
 
 	// Load configuration
 	cfg, err := config.NewConfig(*configPath)
