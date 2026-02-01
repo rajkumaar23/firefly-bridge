@@ -30,7 +30,7 @@ func main() {
 	logger.Debugf("loaded config: %+v", cfg)
 
 	// Initialize Firefly client
-	ff, err := firefly.NewFireflyClient(cfg.Firefly.Host, cfg.Firefly.Token)
+	ff, err := firefly.NewFireflyClient(cfg.Firefly.BaseURL, cfg.Firefly.Token)
 	if err != nil {
 		logger.Fatalf("failed to create firefly client: %v", err)
 	}
@@ -43,5 +43,5 @@ func main() {
 	if ffSysInfo.JSON200 == nil {
 		logger.Fatalf("failed to connect to firefly: %s", ffSysInfo.Status())
 	}
-	logger.Debugf("connected to firefly: %s (os: %s, version: %s)", cfg.Firefly.Host, *ffSysInfo.JSON200.Data.Os, *ffSysInfo.JSON200.Data.ApiVersion)
+	logger.Debugf("connected to firefly: %s (os: %s, version: %s)", cfg.Firefly.BaseURL, *ffSysInfo.JSON200.Data.Os, *ffSysInfo.JSON200.Data.ApiVersion)
 }

@@ -8,8 +8,8 @@ import (
 )
 
 type FireflyConfig struct {
-	Host  string `yaml:"host"`
-	Token string `yaml:"token"`
+	BaseURL string `yaml:"base_url"`
+	Token   string `yaml:"token"`
 }
 
 type Config struct {
