@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+
+	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/config"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/sirupsen/logrus"
@@ -13,33 +15,31 @@ func main() {
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
 	flag.Parse()
 
-	// Set up logger
+	ctx := context.Background()
+
 	logger := logrus.New()
+	logger.SetFormatter(&logrus.TextFormatter{FullTimestamp: true, ForceColors: true})
 	if *debugMode {
 		logger.SetLevel(logrus.DebugLevel)
 		logger.Debugf("log level set to debug")
 	}
 
-	// Load configuration
 	cfg, err := config.NewConfig(*configPath)
 	if err != nil {
-		logger.Fatalf("failed to load config: %v", err)
+		logger.Fatalf("failed to load config: %s", err.Error())
 	}
-	logger.Debugf("loaded config: %+v", cfg)
+	logger.Debugf("loaded config")
 
-	// Initialize Firefly client
-	ff, err := firefly.NewFireflyClient(cfg.Firefly.BaseURL, cfg.Firefly.Token)
+	_, err = firefly.NewFireflyClient(ctx, cfg.Firefly.BaseURL, cfg.Firefly.Token)
 	if err != nil {
-		logger.Fatalf("failed to create firefly client: %v", err)
+		logger.Fatalf("failed to create firefly client: %s", err.Error())
 	}
+	logger.Debug("verified connection to firefly")
 
-	// Verify connection to Firefly
-	ffSysInfo, err := ff.GetAboutWithResponse(context.Background(), &firefly.GetAboutParams{})
+	cdp, err := chromedp.NewChromeDP(ctx, cfg.BrowserExecPath, cfg.GetDownloadCount())
 	if err != nil {
-		logger.Fatalf("failed to get firefly system info: %v", err)
+		logger.Fatalf("failed to setup chromedp: %s", err.Error())
 	}
-	if ffSysInfo.JSON200 == nil {
-		logger.Fatalf("failed to connect to firefly: %s", ffSysInfo.Status())
-	}
-	logger.Debugf("connected to firefly: %s (os: %s, version: %s)", cfg.Firefly.BaseURL, *ffSysInfo.JSON200.Data.Os, *ffSysInfo.JSON200.Data.ApiVersion)
+	defer cdp.Close()
+	logger.Debug("chromedp setup complete")
 }

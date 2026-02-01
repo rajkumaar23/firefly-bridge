@@ -14,6 +14,7 @@ type Account struct {
 }
 
 type Institution struct {
-	Name     string    `yaml:"name" validate:"required"`
-	Accounts []Account `yaml:"accounts" validate:"min=1,dive"`
+	Name      string    `yaml:"name" validate:"required"`
+	Downloads uint8     `yaml:"downloads"`
+	Accounts  []Account `yaml:"accounts" validate:"min=1,dive"`
 }

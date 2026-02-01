@@ -15,8 +15,17 @@ type FireflyConfig struct {
 }
 
 type Config struct {
-	Firefly      FireflyConfig             `yaml:"firefly" validate:"required"`
-	Institutions []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
+	Firefly         FireflyConfig             `yaml:"firefly" validate:"required"`
+	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"required"`
+	Institutions    []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
+}
+
+func (c *Config) GetDownloadCount() uint8 {
+	var sum uint8 = 0
+	for _, i := range c.Institutions {
+		sum += i.Downloads
+	}
+	return sum
 }
 
 func (c *Config) Validate() error {

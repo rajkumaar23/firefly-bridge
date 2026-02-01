@@ -8,13 +8,24 @@ import (
 	"github.com/oapi-codegen/oapi-codegen/v2/pkg/securityprovider"
 )
 
-func NewFireflyClient(host, token string) (*ClientWithResponses, error) {
+func (ff *ClientWithResponses) VerifyConnection(ctx context.Context) error {
+	ffSysInfo, err := ff.GetAboutWithResponse(ctx, &GetAboutParams{})
+	if err != nil {
+		return err
+	}
+	if ffSysInfo.JSON200 == nil {
+		return fmt.Errorf(ffSysInfo.Status())
+	}
+	return nil
+}
+
+func NewFireflyClient(ctx context.Context, host, token string) (*ClientWithResponses, error) {
 	ffToken, err := securityprovider.NewSecurityProviderBearerToken(token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security provider: %w", err)
 	}
 	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
@@ -22,7 +33,7 @@ func NewFireflyClient(host, token string) (*ClientWithResponses, error) {
 		host,
 		WithHTTPClient(client),
 		WithRequestEditorFn(ffToken.Intercept),
-		WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
+		WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
 			req.Header.Set("Accept", "application/json")
 			return nil
 		}),
@@ -30,5 +41,11 @@ func NewFireflyClient(host, token string) (*ClientWithResponses, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create firefly client: %v", err)
 	}
+
+	err = ff.VerifyConnection(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify connection to firefly: %w", err)
+	}
+
 	return ff, nil
 }
