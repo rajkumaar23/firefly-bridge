@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/rajkumaar23/firefly-bridge/internal/institution"
 	"gopkg.in/yaml.v2"
 )
 
 type FireflyConfig struct {
-	BaseURL string `yaml:"base_url"`
-	Token   string `yaml:"token"`
+	BaseURL      string                    `yaml:"base_url"`
+	Token        string                    `yaml:"token"`
+	Institutions []institution.Institution `yaml:"institutions"`
 }
 
 type Config struct {
