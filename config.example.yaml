@@ -1,3 +1,9 @@
 firefly:
   base_url: "https://firefly.example.com/api"
   token: "test-json-web-token"
+institutions:
+  - name: "Chase"
+    accounts:
+      - name: "Sapphire Preferred"
+        firefly_account_id: 1
+        account_type: "regular"
