@@ -1,6 +1,9 @@
 package institution
 
-import "github.com/rajkumaar23/firefly-bridge/internal/chromedp"
+import (
+	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
+	"github.com/rajkumaar23/firefly-bridge/internal/utils"
+)
 
 type AccountType string
 
@@ -10,9 +13,19 @@ const (
 )
 
 type Account struct {
-	Name             string      `yaml:"name" validate:"required"`
-	FireflyAccountID int         `yaml:"firefly_account_id" validate:"required"`
-	AccountType      AccountType `yaml:"account_type" validate:"oneof=regular investment"`
+	Name             string                 `yaml:"name" validate:"required"`
+	FireflyAccountID int                    `yaml:"firefly_account_id" validate:"required"`
+	AccountType      AccountType            `yaml:"account_type" validate:"oneof=regular investment"`
+	BalanceFlow      []chromedp.BrowserStep `yaml:"balance" validate:"min=1,dive"`
+}
+
+func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
+	balanceStr, err := cdp.RunSteps(a.BalanceFlow)
+	if err != nil {
+		return 0, err
+	}
+
+	return utils.ParseAmountFromString(balanceStr)
 }
 
 type Institution struct {
@@ -20,4 +33,12 @@ type Institution struct {
 	Downloads uint8                  `yaml:"downloads"`
 	LoginFlow []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
 	Accounts  []Account              `yaml:"accounts" validate:"min=1,dive"`
+}
+
+func (i *Institution) Login(cdp *chromedp.ChromeDP) error {
+	if _, err := cdp.RunSteps(i.LoginFlow); err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -45,9 +45,16 @@ func main() {
 	logger.Debug("chromedp setup complete")
 
 	for _, i := range cfg.Institutions {
-		if err = cdp.RunSteps(i.LoginFlow); err != nil {
+		if err = i.Login(cdp); err != nil {
 			logger.Fatalf("failed to login to %s: %s", i.Name, err.Error())
 		}
-		logger.Infof("logged into to '%s' successfully", i.Name)
+		logger.Debugf("logged in to '%s' successfully", i.Name)
+		for _, a := range i.Accounts {
+			balance, err := a.GetBalance(cdp)
+			if err != nil {
+				logger.Fatalf("failed to get balance for '%s - %s': %s", i.Name, a.Name, err.Error())
+			}
+			logger.Debugf("balance for '%s - %s': %.2f", i.Name, a.Name, balance)
+		}
 	}
 }

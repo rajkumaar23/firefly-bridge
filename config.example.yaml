@@ -33,3 +33,12 @@ institutions:
       - name: "Sapphire Preferred"
         firefly_account_id: 1
         account_type: "regular"
+        balance:
+          - type: navigate
+            url: https://secure.chase.com/web/auth/dashboard#/dashboard/overview        
+          - type: wait_visible
+            selector: "#CARD_ACCOUNTS > div[data-testid='customAccordion-content']"
+          - type: sleep
+            duration: "2s"
+          - type: text
+            selector: "#\\31 012345678-currentBalance-dataItem > div[data-testid='dataItem-value']"

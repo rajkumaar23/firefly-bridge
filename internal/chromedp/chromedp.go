@@ -117,19 +117,21 @@ const (
 	StepEvaluate StepType = "evaluate"
 	StepSleep    StepType = "sleep"
 	StepSendKey  StepType = "send_keys"
+	StepText     StepType = "text"
 )
 
 type BrowserStep struct {
-	Type     StepType      `yaml:"type" validate:"required,oneof=navigate wait_visible click evaluate sleep send_keys"`
+	Type     StepType      `yaml:"type" validate:"required,oneof=navigate wait_visible click evaluate sleep send_keys text"`
 	URL      string        `yaml:"url" validate:"required_if=Type navigate,omitempty,http_url"`
-	Selector string        `yaml:"selector" validate:"required_if=Type wait_visible,required_if=Type click,required_if=Type send_keys"`
+	Selector string        `yaml:"selector" validate:"required_if=Type wait_visible,required_if=Type click,required_if=Type send_keys,required_if=Type text"`
 	Script   string        `yaml:"script" validate:"required_if=Type evaluate"`
 	Duration time.Duration `yaml:"duration" validate:"required_if=Type sleep"`
 	Value    string        `yaml:"value" validate:"required_if=Type send_keys"`
 }
 
-func (c *ChromeDP) RunSteps(steps []BrowserStep) error {
+func (c *ChromeDP) RunSteps(steps []BrowserStep) (string, error) {
 	actions := []chromedp.Action{}
+	var returnVal string
 	for _, step := range steps {
 		switch step.Type {
 		case StepNavigate:
@@ -149,8 +151,11 @@ func (c *ChromeDP) RunSteps(steps []BrowserStep) error {
 
 		case StepSleep:
 			actions = append(actions, chromedp.Sleep(step.Duration))
+
+		case StepText:
+			actions = append(actions, chromedp.Text(step.Selector, &returnVal))
 		}
 	}
 
-	return chromedp.Run(c.Ctx, actions...)
+	return returnVal, chromedp.Run(c.Ctx, actions...)
 }
