@@ -11,7 +11,8 @@ import (
 )
 
 func main() {
-	var debugMode = flag.Bool("debug", false, "enable debug logs")
+	var cdpDebug = flag.Bool("cdp-debug", false, "enable chromedp debug logs")
+	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
 	flag.Parse()
 
@@ -19,7 +20,7 @@ func main() {
 
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.TextFormatter{FullTimestamp: true, ForceColors: true})
-	if *debugMode {
+	if *ffBridgeDebug {
 		logger.SetLevel(logrus.DebugLevel)
 		logger.Debugf("log level set to debug")
 	}
@@ -36,10 +37,17 @@ func main() {
 	}
 	logger.Debug("verified connection to firefly")
 
-	cdp, err := chromedp.NewChromeDP(ctx, cfg.BrowserExecPath, cfg.GetDownloadCount())
+	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug)
 	if err != nil {
 		logger.Fatalf("failed to setup chromedp: %s", err.Error())
 	}
 	defer cdp.Close()
 	logger.Debug("chromedp setup complete")
+
+	for _, i := range cfg.Institutions {
+		if err = cdp.RunSteps(i.LoginFlow); err != nil {
+			logger.Fatalf("failed to login to %s: %s", i.Name, err.Error())
+		}
+		logger.Infof("logged into to '%s' successfully", i.Name)
+	}
 }

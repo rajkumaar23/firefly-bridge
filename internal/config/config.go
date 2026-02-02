@@ -16,7 +16,7 @@ type FireflyConfig struct {
 
 type Config struct {
 	Firefly         FireflyConfig             `yaml:"firefly" validate:"required"`
-	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"required"`
+	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"file"`
 	Institutions    []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
 }
 
@@ -51,7 +51,7 @@ func NewConfig(path string) (*Config, error) {
 
 	err = cfg.Validate()
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate config: %w", err)
+		return nil, fmt.Errorf("failed to validate: %w", err)
 	}
 
 	return &cfg, nil

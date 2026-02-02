@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/sirupsen/logrus"
 )
 
 type ChromeDP struct {
@@ -18,7 +21,7 @@ type ChromeDP struct {
 	downloadChannel chan string
 }
 
-func NewChromeDP(ctx context.Context, browserExecPath string, downloads uint8) (cdp *ChromeDP, err error) {
+func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads uint8, debug bool) (cdp *ChromeDP, err error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
@@ -34,8 +37,24 @@ func NewChromeDP(ctx context.Context, browserExecPath string, downloads uint8) (
 		chromedp.ExecPath(browserExecPath),
 	)
 
+	errorFn := func(s string, i ...interface{}) {
+		if strings.Contains(s, "unhandled page event") {
+			return
+		}
+
+		logger.Errorf(s, i...)
+	}
+
+	var debugFn func(s string, i ...interface{})
+	if debug {
+		debugFn = func(s string, i ...interface{}) {
+			logger.Debugf(s, i...)
+
+		}
+	}
+
 	ctx, cancel := chromedp.NewExecAllocator(ctx, opts...)
-	ctx, cancel2 := chromedp.NewContext(ctx)
+	ctx, cancel2 := chromedp.NewContext(ctx, chromedp.WithDebugf(debugFn), chromedp.WithErrorf(errorFn))
 
 	cdp = &ChromeDP{
 		Ctx:             ctx,
@@ -83,10 +102,55 @@ func (c *ChromeDP) enableDownloads(count uint8) error {
 }
 
 func (c *ChromeDP) Close() {
-	if c.downloadChannel != nil {
-		close(c.downloadChannel)
-	}
+	close(c.downloadChannel)
 	for _, cancel := range c.cancelFuncs {
 		cancel()
 	}
+}
+
+type StepType string
+
+const (
+	StepNavigate StepType = "navigate"
+	StepWait     StepType = "wait_visible"
+	StepClick    StepType = "click"
+	StepEvaluate StepType = "evaluate"
+	StepSleep    StepType = "sleep"
+	StepSendKey  StepType = "send_keys"
+)
+
+type BrowserStep struct {
+	Type     StepType      `yaml:"type" validate:"required,oneof=navigate wait_visible click evaluate sleep send_keys"`
+	URL      string        `yaml:"url" validate:"required_if=Type navigate,omitempty,http_url"`
+	Selector string        `yaml:"selector" validate:"required_if=Type wait_visible,required_if=Type click,required_if=Type send_keys"`
+	Script   string        `yaml:"script" validate:"required_if=Type evaluate"`
+	Duration time.Duration `yaml:"duration" validate:"required_if=Type sleep"`
+	Value    string        `yaml:"value" validate:"required_if=Type send_keys"`
+}
+
+func (c *ChromeDP) RunSteps(steps []BrowserStep) error {
+	actions := []chromedp.Action{}
+	for _, step := range steps {
+		switch step.Type {
+		case StepNavigate:
+			actions = append(actions, chromedp.Navigate(step.URL))
+
+		case StepWait:
+			actions = append(actions, chromedp.WaitVisible(step.Selector))
+
+		case StepClick:
+			actions = append(actions, chromedp.Click(step.Selector))
+
+		case StepSendKey:
+			actions = append(actions, chromedp.SendKeys(step.Selector, step.Value))
+
+		case StepEvaluate:
+			actions = append(actions, chromedp.Evaluate(step.Script, nil))
+
+		case StepSleep:
+			actions = append(actions, chromedp.Sleep(step.Duration))
+		}
+	}
+
+	return chromedp.Run(c.Ctx, actions...)
 }

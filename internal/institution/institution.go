@@ -1,5 +1,7 @@
 package institution
 
+import "github.com/rajkumaar23/firefly-bridge/internal/chromedp"
+
 type AccountType string
 
 const (
@@ -14,7 +16,8 @@ type Account struct {
 }
 
 type Institution struct {
-	Name      string    `yaml:"name" validate:"required"`
-	Downloads uint8     `yaml:"downloads"`
-	Accounts  []Account `yaml:"accounts" validate:"min=1,dive"`
+	Name      string                 `yaml:"name" validate:"required"`
+	Downloads uint8                  `yaml:"downloads"`
+	LoginFlow []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
+	Accounts  []Account              `yaml:"accounts" validate:"min=1,dive"`
 }

@@ -3,6 +3,32 @@ firefly:
   token: "test-json-web-token"
 institutions:
   - name: "Chase"
+    downloads: 1
+    login:
+      - type: navigate
+        url: "https://www.chase.com/"
+      - type: wait_visible
+        selector: "#logonbox #login-form"
+      - type: sleep
+        duration: "2s"
+      - type: click
+        selector: "#logonbox #userId-text"
+      - type: sleep
+        duration: "2s"
+      - type: send_keys
+        selector: "#logonbox #userId-text-input-field"
+        value: "username"
+      - type: sleep
+        duration: "2s"
+      - type: send_keys
+        selector: "#logonbox #password-text-input-field"
+        value: "password"
+      - type: sleep
+        duration: "2s"
+      - type: click
+        selector: "#logonbox #signin-button"
+      - type: sleep
+        duration: "2s"
     accounts:
       - name: "Sapphire Preferred"
         firefly_account_id: 1
