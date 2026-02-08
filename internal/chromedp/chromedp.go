@@ -12,6 +12,7 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 type ChromeDP struct {
@@ -108,54 +109,156 @@ func (c *ChromeDP) Close() {
 	}
 }
 
+func (c *ChromeDP) RunSteps(steps []BrowserStep) (map[StepType]interface{}, error) {
+	results := make(map[StepType]interface{})
+
+	for _, step := range steps {
+		if err := step.Step.Execute(c.Ctx, results); err != nil {
+			return nil, fmt.Errorf("error executing step %s: %w", step.Step.Type(), err)
+		}
+	}
+	return results, nil
+}
+
 type StepType string
 
 const (
-	StepNavigate StepType = "navigate"
-	StepWait     StepType = "wait_visible"
-	StepClick    StepType = "click"
-	StepEvaluate StepType = "evaluate"
-	StepSleep    StepType = "sleep"
-	StepSendKey  StepType = "send_keys"
-	StepText     StepType = "text"
+	StepNavigate   StepType = "navigate"
+	StepWait       StepType = "wait_visible"
+	StepClick      StepType = "click"
+	StepSleep      StepType = "sleep"
+	StepSendKey    StepType = "send_keys"
+	StepGetBalance StepType = "balance"
 )
 
 type BrowserStep struct {
-	Type     StepType      `yaml:"type" validate:"required,oneof=navigate wait_visible click evaluate sleep send_keys text"`
-	URL      string        `yaml:"url" validate:"required_if=Type navigate,omitempty,http_url"`
-	Selector string        `yaml:"selector" validate:"required_if=Type wait_visible,required_if=Type click,required_if=Type send_keys,required_if=Type text"`
-	Script   string        `yaml:"script" validate:"required_if=Type evaluate"`
-	Duration time.Duration `yaml:"duration" validate:"required_if=Type sleep"`
-	Value    string        `yaml:"value" validate:"required_if=Type send_keys"`
+	Step Step
 }
 
-func (c *ChromeDP) RunSteps(steps []BrowserStep) (string, error) {
-	actions := []chromedp.Action{}
-	var returnVal string
-	for _, step := range steps {
-		switch step.Type {
-		case StepNavigate:
-			actions = append(actions, chromedp.Navigate(step.URL))
-
-		case StepWait:
-			actions = append(actions, chromedp.WaitVisible(step.Selector))
-
-		case StepClick:
-			actions = append(actions, chromedp.Click(step.Selector))
-
-		case StepSendKey:
-			actions = append(actions, chromedp.SendKeys(step.Selector, step.Value))
-
-		case StepEvaluate:
-			actions = append(actions, chromedp.Evaluate(step.Script, nil))
-
-		case StepSleep:
-			actions = append(actions, chromedp.Sleep(step.Duration))
-
-		case StepText:
-			actions = append(actions, chromedp.Text(step.Selector, &returnVal))
-		}
+func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
+	var typeHolder struct {
+		Type StepType `yaml:"type"`
 	}
 
-	return returnVal, chromedp.Run(c.Ctx, actions...)
+	if err := value.Decode(&typeHolder); err != nil {
+		return err
+	}
+
+	var step Step
+
+	switch typeHolder.Type {
+	case StepNavigate:
+		step = &NavigateStep{}
+	case StepWait:
+		step = &WaitStep{}
+	case StepClick:
+		step = &ClickStep{}
+	case StepSleep:
+		step = &SleepStep{}
+	case StepSendKey:
+		step = &SendKeyStep{}
+	case StepGetBalance:
+		step = &BalanceStep{}
+	default:
+		return fmt.Errorf("unknown browser step type: %s", typeHolder.Type)
+	}
+
+	if err := value.Decode(step); err != nil {
+		return err
+	}
+
+	b.Step = step
+	return nil
+}
+
+type Step interface {
+	Type() StepType
+	Execute(ctx context.Context, results map[StepType]interface{}) error
+}
+
+// Below are implementations of different step types.
+// Each step type has its own struct and implements the Step interface.
+
+// NavigateStep represents a step to navigate to a specific URL.
+type NavigateStep struct {
+	URL string `yaml:"url" validate:"required,http_url"`
+}
+
+func (s NavigateStep) Type() StepType {
+	return StepNavigate
+}
+
+func (s NavigateStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	return chromedp.Run(ctx, chromedp.Navigate(s.URL))
+}
+
+// WaitStep represents a step to wait until a specific element is visible on the page.
+type WaitStep struct {
+	Selector string `yaml:"selector" validate:"required"`
+}
+
+func (s WaitStep) Type() StepType {
+	return StepWait
+}
+
+func (s WaitStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	return chromedp.Run(ctx, chromedp.WaitVisible(s.Selector))
+}
+
+// ClickStep represents a step to click on a specific element on the page.
+type ClickStep struct {
+	Selector string `yaml:"selector" validate:"required"`
+}
+
+func (s ClickStep) Type() StepType {
+	return StepClick
+}
+
+func (s ClickStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	return chromedp.Run(ctx, chromedp.Click(s.Selector))
+}
+
+// SendKeyStep represents a step to send keys (input) to a specific element on the page.
+type SendKeyStep struct {
+	Selector string `yaml:"selector" validate:"required"`
+	Value    string `yaml:"value" validate:"required"`
+}
+
+func (s SendKeyStep) Type() StepType {
+	return StepSendKey
+}
+
+func (s SendKeyStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	return chromedp.Run(ctx, chromedp.SendKeys(s.Selector, s.Value))
+}
+
+// SleepStep represents a step to pause execution for a specified duration.
+type SleepStep struct {
+	Duration time.Duration `yaml:"duration" validate:"required"`
+}
+
+func (s SleepStep) Type() StepType {
+	return StepSleep
+}
+
+func (s SleepStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	return chromedp.Run(ctx, chromedp.Sleep(s.Duration))
+}
+
+// BalanceStep represents a step to retrieve the balance from a specific element on the page.
+type BalanceStep struct {
+	Selector string `yaml:"selector" validate:"required"`
+}
+
+func (s BalanceStep) Type() StepType {
+	return StepGetBalance
+}
+
+func (s BalanceStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	var result string
+	if err := chromedp.Run(ctx, chromedp.Text(s.Selector, &result)); err != nil {
+		return err
+	}
+	results[s.Type()] = result
+	return nil
 }

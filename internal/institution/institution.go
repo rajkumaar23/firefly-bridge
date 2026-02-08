@@ -1,6 +1,8 @@
 package institution
 
 import (
+	"fmt"
+
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 )
@@ -20,9 +22,14 @@ type Account struct {
 }
 
 func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
-	balanceStr, err := cdp.RunSteps(a.BalanceFlow)
+	results, err := cdp.RunSteps(a.BalanceFlow)
 	if err != nil {
 		return 0, err
+	}
+
+	balanceStr, ok := results[chromedp.StepGetBalance].(string)
+	if !ok {
+		return 0, fmt.Errorf("failed to retrieve balance")
 	}
 
 	return utils.ParseAmountFromString(balanceStr)

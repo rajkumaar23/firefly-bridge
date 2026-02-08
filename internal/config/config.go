@@ -3,10 +3,12 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/institution"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type FireflyConfig struct {
@@ -31,6 +33,13 @@ func (c *Config) GetDownloadCount() uint8 {
 func (c *Config) Validate() error {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 
+	validate.RegisterCustomTypeFunc(func(field reflect.Value) interface{} {
+		if step, ok := field.Interface().(chromedp.BrowserStep); ok {
+			return step.Step
+		}
+		return nil
+	}, chromedp.BrowserStep{})
+
 	if err := validate.Struct(c); err != nil {
 		return err
 	}
@@ -44,13 +53,11 @@ func NewConfig(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	err = yaml.Unmarshal(data, &cfg)
-	if err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
 	}
 
-	err = cfg.Validate()
-	if err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate: %w", err)
 	}
 
