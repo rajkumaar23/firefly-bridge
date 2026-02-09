@@ -128,6 +128,7 @@ const (
 	StepClick      StepType = "click"
 	StepSleep      StepType = "sleep"
 	StepSendKey    StepType = "send_keys"
+	StepSetValue   StepType = "set_value"
 	StepGetBalance StepType = "balance"
 )
 
@@ -157,6 +158,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &SleepStep{}
 	case StepSendKey:
 		step = &SendKeyStep{}
+	case StepSetValue:
+		step = &SetValueStep{}
 	case StepGetBalance:
 		step = &BalanceStep{}
 	default:
@@ -230,6 +233,20 @@ func (s SendKeyStep) Type() StepType {
 
 func (s SendKeyStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
 	return chromedp.Run(ctx, chromedp.SendKeys(s.Selector, s.Value))
+}
+
+// SetValueStep represents a step to set a value for a specific element on the page.
+type SetValueStep struct {
+	Selector string `yaml:"selector" validate:"required"`
+	Value    string `yaml:"value" validate:"required"`
+}
+
+func (s SetValueStep) Type() StepType {
+	return StepSetValue
+}
+
+func (s SetValueStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	return chromedp.Run(ctx, chromedp.SetValue(s.Selector, s.Value))
 }
 
 // SleepStep represents a step to pause execution for a specified duration.
