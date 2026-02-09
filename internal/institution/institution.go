@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
+	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 )
 
@@ -19,6 +20,7 @@ type Account struct {
 	FireflyAccountID int                    `yaml:"firefly_account_id" validate:"required"`
 	AccountType      AccountType            `yaml:"account_type" validate:"oneof=regular investment"`
 	BalanceFlow      []chromedp.BrowserStep `yaml:"balance" validate:"min=1,dive"`
+	TransactionsFlow []chromedp.BrowserStep `yaml:"transactions" validate:"min=1,dive"`
 }
 
 func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
@@ -33,6 +35,20 @@ func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
 	}
 
 	return utils.ParseAmountFromString(balanceStr)
+}
+
+func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]firefly.Transaction, error) {
+	results, err := cdp.RunSteps(a.TransactionsFlow)
+	if err != nil {
+		return nil, err
+	}
+
+	txns, ok := results[chromedp.StepGetTransactions].([]firefly.Transaction)
+	if !ok {
+		return nil, fmt.Errorf("failed to retrieve transactions")
+	}
+
+	return txns, nil
 }
 
 type Institution struct {

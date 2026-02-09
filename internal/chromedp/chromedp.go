@@ -13,6 +13,9 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+
+	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
+	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 )
 
 type ChromeDP struct {
@@ -123,13 +126,14 @@ func (c *ChromeDP) RunSteps(steps []BrowserStep) (map[StepType]interface{}, erro
 type StepType string
 
 const (
-	StepNavigate   StepType = "navigate"
-	StepWait       StepType = "wait_visible"
-	StepClick      StepType = "click"
-	StepSleep      StepType = "sleep"
-	StepSendKey    StepType = "send_keys"
-	StepSetValue   StepType = "set_value"
-	StepGetBalance StepType = "balance"
+	StepNavigate        StepType = "navigate"
+	StepWait            StepType = "wait_visible"
+	StepClick           StepType = "click"
+	StepSleep           StepType = "sleep"
+	StepSendKey         StepType = "send_keys"
+	StepSetValue        StepType = "set_value"
+	StepGetBalance      StepType = "balance"
+	StepGetTransactions StepType = "transactions"
 )
 
 type BrowserStep struct {
@@ -162,6 +166,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &SetValueStep{}
 	case StepGetBalance:
 		step = &BalanceStep{}
+	case StepGetTransactions:
+		step = &GetTransactionsStep{}
 	default:
 		return fmt.Errorf("unknown browser step type: %s", typeHolder.Type)
 	}
@@ -246,7 +252,11 @@ func (s SetValueStep) Type() StepType {
 }
 
 func (s SetValueStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	return chromedp.Run(ctx, chromedp.SetValue(s.Selector, s.Value))
+	val, err := utils.ParseTemplate(s.Value)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+	return chromedp.Run(ctx, chromedp.SetValue(s.Selector, val))
 }
 
 // SleepStep represents a step to pause execution for a specified duration.
@@ -277,5 +287,20 @@ func (s BalanceStep) Execute(ctx context.Context, results map[StepType]interface
 		return err
 	}
 	results[s.Type()] = result
+	return nil
+}
+
+// GetTransactionsStep represents a step to retrieve transactions from a specific element on the page.
+type GetTransactionsStep struct{}
+
+func (s GetTransactionsStep) Type() StepType {
+	return StepGetTransactions
+}
+
+func (s GetTransactionsStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+	// Placeholder implementation.
+	var txns []firefly.Transaction
+
+	results[s.Type()] = txns
 	return nil
 }

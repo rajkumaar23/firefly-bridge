@@ -58,6 +58,11 @@ func main() {
 				logger.Panicf("failed to get balance for '%s - %s': %s", i.Name, a.Name, err.Error())
 			}
 			logger.Debugf("balance for '%s - %s': %.2f", i.Name, a.Name, balance)
+			txns, err := a.GetTransactions(cdp)
+			if err != nil {
+				logger.Panicf("failed to get transactions for '%s - %s': %s", i.Name, a.Name, err.Error())
+			}
+			logger.Debugf("got %d transactions for '%s - %s'", len(txns), i.Name, a.Name)
 		}
 	}
 }
