@@ -102,7 +102,10 @@ func (c *ChromeDP) enableDownloads(count uint8) error {
 		}
 	})
 
-	return chromedp.Run(c.Ctx, browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).WithDownloadPath(c.workingDir).WithEventsEnabled(true))
+	behavior := browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).
+		WithDownloadPath(c.workingDir + "/downloads").
+		WithEventsEnabled(true)
+	return chromedp.Run(c.Ctx, behavior)
 }
 
 func (c *ChromeDP) Close() {
