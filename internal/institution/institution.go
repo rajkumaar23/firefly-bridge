@@ -55,7 +55,6 @@ func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]firefly.Transaction
 
 type Institution struct {
 	Name      string                 `yaml:"name" validate:"required"`
-	Downloads uint8                  `yaml:"downloads"`
 	LoginFlow []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
 	Accounts  []Account              `yaml:"accounts" validate:"min=1,dive"`
 }

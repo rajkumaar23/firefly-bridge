@@ -22,10 +22,11 @@ type ChromeDP struct {
 	Ctx             context.Context
 	cancelFuncs     []context.CancelFunc
 	workingDir      string
+	downloadPath    string
 	downloadChannel chan string
 }
 
-func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads uint8, debug bool) (cdp *ChromeDP, err error) {
+func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, debug bool) (cdp *ChromeDP, err error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
@@ -60,10 +61,12 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 	ctx, cancel := chromedp.NewExecAllocator(ctx, opts...)
 	ctx, cancel2 := chromedp.NewContext(ctx, chromedp.WithDebugf(debugFn), chromedp.WithErrorf(errorFn))
 
+	downloadsDir := filepath.Join(workingDir, "downloads")
 	cdp = &ChromeDP{
 		Ctx:             ctx,
 		cancelFuncs:     []context.CancelFunc{cancel, cancel2},
 		workingDir:      workingDir,
+		downloadPath:    downloadsDir,
 		downloadChannel: make(chan string),
 	}
 	defer func() {
@@ -75,7 +78,7 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 	if err := cdp.hideWebDriver(); err != nil {
 		return nil, fmt.Errorf("failed to hide web driver: %w", err)
 	}
-	if err := cdp.enableDownloads(downloads); err != nil {
+	if err := cdp.enableDownloads(downloadsDir); err != nil {
 		return nil, fmt.Errorf("failed to setup download channels: %w", err)
 	}
 
@@ -92,8 +95,8 @@ func (c *ChromeDP) hideWebDriver() error {
 	}))
 }
 
-func (c *ChromeDP) enableDownloads(count uint8) error {
-	c.downloadChannel = make(chan string, count)
+func (c *ChromeDP) enableDownloads(dir string) error {
+	c.downloadChannel = make(chan string)
 	chromedp.ListenTarget(c.Ctx, func(v interface{}) {
 		if ev, ok := v.(*browser.EventDownloadProgress); ok {
 			if ev.State == browser.DownloadProgressStateCompleted {
@@ -103,7 +106,7 @@ func (c *ChromeDP) enableDownloads(count uint8) error {
 	})
 
 	behavior := browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).
-		WithDownloadPath(c.workingDir + "/downloads").
+		WithDownloadPath(dir).
 		WithEventsEnabled(true)
 	return chromedp.Run(c.Ctx, behavior)
 }
@@ -312,7 +315,7 @@ func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface
 	logger.Debugf("received download event for file: %s", fileName)
 
 	parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config)
-	transactions, err := parser.Parse(fileName)
+	transactions, err := parser.Parse(filepath.Join(c.downloadPath, fileName))
 	if err != nil {
 		return fmt.Errorf("error parsing transactions: %w", err)
 	}

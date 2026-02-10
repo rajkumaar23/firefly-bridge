@@ -3,7 +3,6 @@ firefly:
   token: "test-json-web-token"
 institutions:
   - name: "Chase"
-    downloads: 1
     login:
       - type: navigate
         url: "https://www.chase.com/"
