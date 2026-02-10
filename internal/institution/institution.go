@@ -16,10 +16,12 @@ const (
 )
 
 type Account struct {
-	Name             string                 `yaml:"name" validate:"required"`
-	FireflyAccountID int                    `yaml:"firefly_account_id" validate:"required"`
-	AccountType      AccountType            `yaml:"account_type" validate:"oneof=regular investment"`
-	BalanceFlow      []chromedp.BrowserStep `yaml:"balance" validate:"min=1,dive"`
+	Name             string      `yaml:"name" validate:"required"`
+	FireflyAccountID int         `yaml:"firefly_account_id" validate:"required"`
+	AccountType      AccountType `yaml:"account_type" validate:"oneof=regular investment"`
+	// TODO: validate last item is chromedp.StepTypeGetBalance
+	BalanceFlow []chromedp.BrowserStep `yaml:"balance" validate:"min=1,dive"`
+	// TODO: validate last item is chromedp.StepTypeGetTransactions
 	TransactionsFlow []chromedp.BrowserStep `yaml:"transactions" validate:"min=1,dive"`
 }
 
@@ -37,13 +39,13 @@ func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
 	return utils.ParseAmountFromString(balanceStr)
 }
 
-func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]firefly.Transaction, error) {
+func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]firefly.TransactionSplit, error) {
 	results, err := cdp.RunSteps(a.TransactionsFlow)
 	if err != nil {
 		return nil, err
 	}
 
-	txns, ok := results[chromedp.StepGetTransactions].([]firefly.Transaction)
+	txns, ok := results[chromedp.StepGetTransactions].([]firefly.TransactionSplit)
 	if !ok {
 		return nil, fmt.Errorf("failed to retrieve transactions")
 	}

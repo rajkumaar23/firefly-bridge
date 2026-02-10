@@ -20,7 +20,13 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/richardlehane/mscfb v1.0.4 // indirect
+	github.com/richardlehane/msoleps v1.0.4 // indirect
+	github.com/tiendc/go-deepcopy v1.7.1 // indirect
+	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )
 
@@ -31,6 +37,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
+	github.com/xuri/excelize/v2 v2.10.0
 	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

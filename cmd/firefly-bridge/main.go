@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/config"
@@ -63,6 +64,9 @@ func main() {
 				logger.Panicf("failed to get transactions for '%s - %s': %s", i.Name, a.Name, err.Error())
 			}
 			logger.Debugf("got %d transactions for '%s - %s'", len(txns), i.Name, a.Name)
+			for _, t := range txns {
+				logger.Debugf("transaction for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+			}
 		}
 	}
 }

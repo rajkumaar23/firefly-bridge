@@ -23,3 +23,12 @@ func Today(format string) (string, error) {
 
 	return time.Now().Format(format), nil
 }
+
+// ParseLocalDateFromString parses a date string using the specified layout in the local timezone.
+func ParseLocalDateFromString(layout string, s string) (time.Time, error) {
+	transactionDate, err := time.ParseInLocation(layout, s, time.Local)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return transactionDate, nil
+}

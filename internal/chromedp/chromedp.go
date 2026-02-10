@@ -14,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
+	"github.com/rajkumaar23/firefly-bridge/internal/csv"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 )
 
@@ -116,7 +116,7 @@ func (c *ChromeDP) RunSteps(steps []BrowserStep) (map[StepType]interface{}, erro
 	results := make(map[StepType]interface{})
 
 	for _, step := range steps {
-		if err := step.Step.Execute(c.Ctx, results); err != nil {
+		if err := step.Step.Execute(c, results); err != nil {
 			return nil, fmt.Errorf("error executing step %s: %w", step.Step.Type(), err)
 		}
 	}
@@ -182,7 +182,7 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 
 type Step interface {
 	Type() StepType
-	Execute(ctx context.Context, results map[StepType]interface{}) error
+	Execute(c *ChromeDP, results map[StepType]interface{}) error
 }
 
 // Below are implementations of different step types.
@@ -197,8 +197,8 @@ func (s NavigateStep) Type() StepType {
 	return StepNavigate
 }
 
-func (s NavigateStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	return chromedp.Run(ctx, chromedp.Navigate(s.URL))
+func (s NavigateStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Navigate(s.URL))
 }
 
 // WaitStep represents a step to wait until a specific element is visible on the page.
@@ -210,8 +210,8 @@ func (s WaitStep) Type() StepType {
 	return StepWait
 }
 
-func (s WaitStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	return chromedp.Run(ctx, chromedp.WaitVisible(s.Selector))
+func (s WaitStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.Selector))
 }
 
 // ClickStep represents a step to click on a specific element on the page.
@@ -223,8 +223,8 @@ func (s ClickStep) Type() StepType {
 	return StepClick
 }
 
-func (s ClickStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	return chromedp.Run(ctx, chromedp.Click(s.Selector))
+func (s ClickStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Click(s.Selector))
 }
 
 // SendKeyStep represents a step to send keys (input) to a specific element on the page.
@@ -237,8 +237,8 @@ func (s SendKeyStep) Type() StepType {
 	return StepSendKey
 }
 
-func (s SendKeyStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	return chromedp.Run(ctx, chromedp.SendKeys(s.Selector, s.Value))
+func (s SendKeyStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.SendKeys(s.Selector, s.Value))
 }
 
 // SetValueStep represents a step to set a value for a specific element on the page.
@@ -251,12 +251,12 @@ func (s SetValueStep) Type() StepType {
 	return StepSetValue
 }
 
-func (s SetValueStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+func (s SetValueStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 	val, err := utils.ParseTemplate(s.Value)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
-	return chromedp.Run(ctx, chromedp.SetValue(s.Selector, val))
+	return chromedp.Run(c.Ctx, chromedp.SetValue(s.Selector, val))
 }
 
 // SleepStep represents a step to pause execution for a specified duration.
@@ -268,8 +268,8 @@ func (s SleepStep) Type() StepType {
 	return StepSleep
 }
 
-func (s SleepStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	return chromedp.Run(ctx, chromedp.Sleep(s.Duration))
+func (s SleepStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Sleep(s.Duration))
 }
 
 // BalanceStep represents a step to retrieve the balance from a specific element on the page.
@@ -281,26 +281,39 @@ func (s BalanceStep) Type() StepType {
 	return StepGetBalance
 }
 
-func (s BalanceStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
+func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 	var result string
-	if err := chromedp.Run(ctx, chromedp.Text(s.Selector, &result)); err != nil {
+	if err := chromedp.Run(c.Ctx, chromedp.Text(s.Selector, &result)); err != nil {
 		return err
 	}
 	results[s.Type()] = result
 	return nil
 }
 
-// GetTransactionsStep represents a step to retrieve transactions from a specific element on the page.
-type GetTransactionsStep struct{}
+type (
+	GetTransactionsStep struct {
+		CSV struct {
+			Opts   *csv.Options     `yaml:"options"`
+			Config *csv.FieldConfig `yaml:"fields" validate:"required,validateFn"`
+		} `yaml:"csv" validate:"required"`
+	}
+)
 
 func (s GetTransactionsStep) Type() StepType {
 	return StepGetTransactions
 }
 
-func (s GetTransactionsStep) Execute(ctx context.Context, results map[StepType]interface{}) error {
-	// Placeholder implementation.
-	var txns []firefly.Transaction
+func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	fileName := <-c.downloadChannel
+	logger := utils.GetLogger(c.Ctx)
+	logger.Debugf("received download event for file: %s", fileName)
 
-	results[s.Type()] = txns
+	parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config)
+	transactions, err := parser.Parse(fileName)
+	if err != nil {
+		return fmt.Errorf("error parsing transactions: %w", err)
+	}
+
+	results[s.Type()] = transactions
 	return nil
 }
