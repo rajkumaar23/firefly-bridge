@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
@@ -31,9 +32,11 @@ require (
 )
 
 require (
+	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/chromedp/chromedp v0.14.2
 	github.com/go-playground/validator/v10 v10.30.1
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
