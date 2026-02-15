@@ -14,7 +14,7 @@ func (ff *ClientWithResponses) VerifyConnection(ctx context.Context) error {
 		return err
 	}
 	if ffSysInfo.JSON200 == nil {
-		return fmt.Errorf(ffSysInfo.Status())
+		return fmt.Errorf("%s", ffSysInfo.Status())
 	}
 	return nil
 }
