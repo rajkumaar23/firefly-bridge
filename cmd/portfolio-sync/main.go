@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/market"
@@ -63,6 +65,10 @@ func main() {
 
 	market := market.NewMarket()
 	errors := make([]error, 0)
+
+	slices.SortFunc(accounts.ApplicationvndApiJSON200.Data, func(a firefly.AccountRead, b firefly.AccountRead) int {
+		return strings.Compare(a.Attributes.Name, b.Attributes.Name)
+	})
 
 	for _, account := range accounts.ApplicationvndApiJSON200.Data {
 		notes := account.Attributes.Notes
