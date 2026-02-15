@@ -30,26 +30,27 @@ func NewMarket() *Market {
 }
 
 // GetPrice fetches the current price for the given market ID and symbol
-// marketID is a string that identifies the market to fetch the price from. It can be one of the following:
+// marketID is a string that identifies the market to fetch the price from. It can be one of the following (case-insensitive):
 // - cash: returns 1 (used for cash accounts in firefly)
 // - mi: fetches the current NAV for the given fund from markets.businessinsider.com
 // - mc: fetches the current NAV for the given mutual fund from moneycontrol.com
 // - gold-{purity}: fetches the current gold spot price from kitco.com and applies the purity multiplier, where {purity} is a decimal number between 0 and 1 representing the purity of the gold (eg: gold-0.916 for 22k gold, gold-1 for 24)
 // - any other value: treated as a stock symbol and fetches the current stock price for the given symbol from finance.yahoo.com
 func (m *Market) GetPrice(marketID string, symbol string) (float64, error) {
-	if strings.HasPrefix(marketID, GoldPrefix) {
-		purityStr := strings.TrimPrefix(marketID, GoldPrefix)
+	marketIDLower := strings.ToLower(marketID)
+	if strings.HasPrefix(marketIDLower, GoldPrefix) {
+		purityStr := strings.TrimPrefix(marketIDLower, GoldPrefix)
 		purity, err := strconv.ParseFloat(purityStr, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid purity percentage in market ID: %s", marketID)
+			return 0, fmt.Errorf("invalid purity percentage in market ID: %s", marketIDLower)
 		}
 		if purity <= 0 || purity > 1 {
-			return 0, fmt.Errorf("purity percentage must be between 0 and 1 in market ID: %s", marketID)
+			return 0, fmt.Errorf("purity percentage must be between 0 and 1 in market ID: %s", marketIDLower)
 		}
 		return m.getGoldSpotPrice(purity)
 	}
 
-	switch marketID {
+	switch marketIDLower {
 	case CashPrefix:
 		return 1, nil
 	case MarketsInsiderPrefix:
