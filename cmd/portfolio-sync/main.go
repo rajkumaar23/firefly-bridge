@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
+	"github.com/rajkumaar23/firefly-bridge/internal/market"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"github.com/sirupsen/logrus"
 )
@@ -59,6 +61,9 @@ func main() {
 	}
 	logger.Debugf("got %d accounts", len(accounts.ApplicationvndApiJSON200.Data))
 
+	market := market.NewMarket()
+	errors := make([]error, 0)
+
 	for _, account := range accounts.ApplicationvndApiJSON200.Data {
 		notes := account.Attributes.Notes
 		if notes == nil || *notes == "" {
@@ -67,5 +72,28 @@ func main() {
 		}
 
 		logger.Debugf("found account %s with notes: %s", account.Attributes.Name, *notes)
+		holdings, err := account.GetHoldings()
+		if err != nil {
+			err = fmt.Errorf("failed to get holdings for account %s: %w", account.Attributes.Name, err)
+			logger.Error(err.Error())
+			errors = append(errors, err)
+			continue
+		}
+		if holdings == nil {
+			err = fmt.Errorf("no holdings found for account %s", account.Attributes.Name)
+			logger.Error(err.Error())
+			errors = append(errors, err)
+			continue
+		}
+
+		totalValue, err := holdings.GetTotalValue(market)
+		if err != nil {
+			err = fmt.Errorf("failed to get total value for account %s: %w", account.Attributes.Name, err)
+			logger.Error(err.Error())
+			errors = append(errors, err)
+			continue
+		}
+
+		logger.Infof("account: %s, real-time value: %.2f, firefly value: %s", account.Attributes.Name, totalValue, *account.Attributes.CurrentBalance)
 	}
 }

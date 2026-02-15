@@ -34,22 +34,10 @@ func NewMarket() *Market {
 // - cash: returns 1 (used for cash accounts in firefly)
 // - mi: fetches the current NAV for the given fund from markets.businessinsider.com
 // - mc: fetches the current NAV for the given mutual fund from moneycontrol.com
-// - gold-{purity}: fetches the current gold spot price from kitco.com and applies the purity multiplier, where {purity} is a decimal number between 0 and 1 representing the purity of the gold (eg: gold-0.916 for 22k gold, gold-1 for 24)
+// - gold: fetches the current gold spot price from kitco.com (purity of the gold should be specified in the symbol, eg: 916 for 22k gold, 999 for 24k gold)
 // - any other value: treated as a stock symbol and fetches the current stock price for the given symbol from finance.yahoo.com
 func (m *Market) GetPrice(marketID string, symbol string) (float64, error) {
 	marketIDLower := strings.ToLower(marketID)
-	if strings.HasPrefix(marketIDLower, GoldPrefix) {
-		purityStr := strings.TrimPrefix(marketIDLower, GoldPrefix)
-		purity, err := strconv.ParseFloat(purityStr, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid purity percentage in market ID: %s", marketIDLower)
-		}
-		if purity <= 0 || purity > 1 {
-			return 0, fmt.Errorf("purity percentage must be between 0 and 1 in market ID: %s", marketIDLower)
-		}
-		return m.getGoldSpotPrice(purity)
-	}
-
 	switch marketIDLower {
 	case CashPrefix:
 		return 1, nil
@@ -57,6 +45,13 @@ func (m *Market) GetPrice(marketID string, symbol string) (float64, error) {
 		return m.getMarketsInsiderNAV(symbol)
 	case MoneyControlPrefix:
 		return m.getMoneyControlNAV(symbol)
+	case GoldPrefix:
+		purity, err := strconv.ParseFloat(symbol, 64)
+		if err != nil {
+			return 0, fmt.Errorf("error parsing purity for gold in symbol: %s", symbol)
+		}
+		purityPercentage := purity / 1000
+		return m.getGoldSpotPrice(purityPercentage)
 	default:
 		return m.getYahooStockPrice(symbol)
 	}
@@ -180,7 +175,7 @@ func (m *Market) getMoneyControlNAV(path string) (float64, error) {
 	return price, nil
 }
 
-// getGoldSpotPrice fetches the current gold spot price from kitco.com
+// getGoldSpotPrice fetches the current gold spot price per 1 troy ounce (ozt) from kitco.com
 // purityMultiplier is the multiplier to apply to the spot price based on the purity of the gold (eg: 0.916 for 22k gold, 1 for 24k gold)
 func (m *Market) getGoldSpotPrice(purityMultiplier float64) (float64, error) {
 	resp, err := m.resty.R().
@@ -195,9 +190,9 @@ func (m *Market) getGoldSpotPrice(purityMultiplier float64) (float64, error) {
 
 	var kitcoRes struct {
 		PreciousMetals struct {
-			PM struct {
-				Symbol     string  `json:"symbol"`
-				CurrentBid float64 `json:"currentBid,string"`
+			PM []struct {
+				Symbol     string  `json:"Symbol"`
+				CurrentBid float64 `json:"current_bid,string"`
 			} `json:"PM"`
 		} `json:"PreciousMetals"`
 	}
@@ -206,13 +201,19 @@ func (m *Market) getGoldSpotPrice(purityMultiplier float64) (float64, error) {
 		return 0, fmt.Errorf("error unmarshaling json response from kitco: %w", err)
 	}
 
-	if kitcoRes.PreciousMetals.PM.Symbol != "AU" {
-		return 0, fmt.Errorf("unexpected symbol in kitco response: %s", kitcoRes.PreciousMetals.PM.Symbol)
+	pm := kitcoRes.PreciousMetals.PM
+	if len(pm) == 0 {
+		return 0, fmt.Errorf("no precious metals found in kitco response")
 	}
 
-	if kitcoRes.PreciousMetals.PM.CurrentBid == 0 {
+	gold := pm[0]
+	if gold.Symbol != "AU" {
+		return 0, fmt.Errorf("unexpected symbol in kitco response: %s", gold.Symbol)
+	}
+
+	if gold.CurrentBid == 0 {
 		return 0, fmt.Errorf("gold spot price is zero in kitco response")
 	}
 
-	return kitcoRes.PreciousMetals.PM.CurrentBid * purityMultiplier, nil
+	return gold.CurrentBid * purityMultiplier, nil
 }
