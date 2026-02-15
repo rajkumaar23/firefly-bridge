@@ -42,19 +42,30 @@ func main() {
 			logger.Panicf("firefly token not provided, set it via --token flag or $FIREFLY_TOKEN environment variable")
 		}
 	}
-	
+
 	ff, err := firefly.NewFireflyClient(ctx, *baseURL, *token)
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
 	logger.Debug("verified connection to firefly")
 
-	accounts, err := ff.GetAccountsACWithResponse(ctx, &firefly.GetAccountsACParams{})
+	accountTypeFilter := firefly.AccountTypeFilterAsset
+	accounts, err := ff.ListAccountWithResponse(ctx, &firefly.ListAccountParams{Type: &accountTypeFilter})
 	if err != nil {
 		logger.Panicf("failed to get accounts: %s", err.Error())
 	}
-	if accounts.JSON200 == nil {
+	if accounts.ApplicationvndApiJSON200 == nil {
 		logger.Panicf("failed to get accounts: %s", accounts.Status())
 	}
-	logger.Debugf("got %d accounts", len(*accounts.JSON200))
+	logger.Debugf("got %d accounts", len(accounts.ApplicationvndApiJSON200.Data))
+
+	for _, account := range accounts.ApplicationvndApiJSON200.Data {
+		notes := account.Attributes.Notes
+		if notes == nil || *notes == "" {
+			logger.Debugf("skipping account %s since it has no notes", account.Attributes.Name)
+			continue
+		}
+
+		logger.Debugf("found account %s with notes: %s", account.Attributes.Name, *notes)
+	}
 }
