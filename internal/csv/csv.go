@@ -211,9 +211,9 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
 		}
 
 		if amount < 0 {
-			transaction.Type = "withdrawal"
+			transaction.Type = firefly.Withdrawal
 		} else {
-			transaction.Type = "deposit"
+			transaction.Type = firefly.Deposit
 		}
 
 		transactions = append(transactions, transaction)
