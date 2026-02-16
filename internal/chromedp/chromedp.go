@@ -244,7 +244,11 @@ func (s SendKeyStep) Type() StepType {
 }
 
 func (s SendKeyStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
-	return chromedp.Run(c.Ctx, chromedp.SendKeys(s.Selector, s.Value))
+	val, err := utils.ParseTemplate(s.Value)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+	return chromedp.Run(c.Ctx, chromedp.SendKeys(s.Selector, val))
 }
 
 // SetValueStep represents a step to set a value for a specific element on the page.
