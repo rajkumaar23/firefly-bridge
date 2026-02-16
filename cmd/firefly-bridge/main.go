@@ -117,7 +117,7 @@ func main() {
 				}
 				if res.StatusCode != http.StatusOK {
 					body, _ := io.ReadAll(res.Body)
-					logger.Panicf("got expected status code when storing transaction in firefly for '%s - %s': (%s, %s, %s, %s): (%s) %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
+					logger.Panicf("got unexpected status code when storing transaction in firefly for '%s - %s': (%s, %s, %s, %s): (%s) %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
 				}
 				logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 				totalUploadCount++
