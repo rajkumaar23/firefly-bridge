@@ -137,6 +137,7 @@ const (
 	StepWait            StepType = "wait_visible"
 	StepClick           StepType = "click"
 	StepSleep           StepType = "sleep"
+	StepReload          StepType = "reload"
 	StepSendKey         StepType = "send_keys"
 	StepSetValue        StepType = "set_value"
 	StepGetBalance      StepType = "balance"
@@ -167,6 +168,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &ClickStep{}
 	case StepSleep:
 		step = &SleepStep{}
+	case StepReload:
+		step = &ReloadStep{}
 	case StepSendKey:
 		step = &SendKeyStep{}
 	case StepSetValue:
@@ -280,6 +283,9 @@ func (s SetValueStep) Execute(c *ChromeDP, results map[StepType]interface{}) err
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.SetValue(s.JSPath, val, chromedp.ByJSPath))
+	}
 	return chromedp.Run(c.Ctx, chromedp.SetValue(s.Selector, val))
 }
 
@@ -294,6 +300,17 @@ func (s SleepStep) Type() StepType {
 
 func (s SleepStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 	return chromedp.Run(c.Ctx, chromedp.Sleep(s.Duration))
+}
+
+// ReloadStep represents a step to reload the current page.
+type ReloadStep struct{}
+
+func (r ReloadStep) Type() StepType {
+	return StepReload
+}
+
+func (r ReloadStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Reload())
 }
 
 // BalanceStep represents a step to retrieve the balance from a specific element on the page.
