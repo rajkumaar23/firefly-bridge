@@ -63,6 +63,9 @@ func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]*firefly.Transactio
 		// Set the internal reference to the hash of the transaction to lateravoid duplicates in Firefly.
 		hash := t.HashV2()
 		t.InternalReference = &hash
+
+		var order int32 = 0
+		t.Order = &order
 	}
 
 	return txns, nil
