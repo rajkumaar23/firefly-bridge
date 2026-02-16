@@ -70,8 +70,8 @@ func (f *FieldConfig) Validate() error {
 
 type RowCondition struct {
 	Column    int    `yaml:"column" validate:"required"`
-	Value     string `yaml:"value" validate:"required_if=Operation equals|required_if=Operation contains|required_if=Operation starts_with|required_if=Operation ends_with"`
 	Operation string `yaml:"operation" validate:"oneof=equals contains starts_with ends_with empty not_empty"`
+	Value     string `yaml:"value" validate:"required_if=Operation equals,required_if=Operation contains,required_if=Operation starts_with,required_if=Operation ends_with"`
 }
 
 // Options defines additional settings for parsing CSV files
@@ -79,7 +79,7 @@ type Options struct {
 	Delimiter         string         `yaml:"delimiter"`
 	SkipHeadRows      int            `yaml:"skip_head_rows"`
 	SkipTailRows      int            `yaml:"skip_tail_rows"`
-	SkipRowConditions []RowCondition `yaml:"skip_row_conditions"`
+	SkipRowConditions []RowCondition `yaml:"skip_row_conditions" validate:"dive"`
 }
 
 type Parser struct {
