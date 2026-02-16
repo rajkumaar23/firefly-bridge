@@ -4,9 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"math"
+	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/market"
@@ -18,6 +23,7 @@ func main() {
 	var debug = flag.Bool("debug", false, "enable debug logs")
 	var baseURL = flag.String("base-url", "", "firefly base url (eg: http://firefly.lan.example.com/api), alternative to setting it via environment $FIREFLY_BASE_URL")
 	var token = flag.String("token", "", "firefly access token, alternative to setting it via environment $FIREFLY_TOKEN")
+	var defaultCategory = flag.String("category", "Savings & Investments", "default category for transactions created by this tool")
 	flag.Parse()
 
 	logger := logrus.New()
@@ -100,6 +106,52 @@ func main() {
 			continue
 		}
 
-		logger.Infof("account: %s, real-time value: %.2f, firefly value: %s", account.Attributes.Name, totalValue, *account.Attributes.CurrentBalance)
+		currentBalance, err := strconv.ParseFloat(*account.Attributes.CurrentBalance, 64)
+		if err != nil {
+			err = fmt.Errorf("failed to parse current balance for account %s: %w", account.Attributes.Name, err)
+			logger.Error(err.Error())
+			errors = append(errors, err)
+			continue
+		}
+
+		logger.Infof("account: %s, real-time value: %.2f, firefly value: %.2f", account.Attributes.Name, totalValue, currentBalance)
+
+		difference := totalValue - currentBalance
+
+		if math.Abs(difference) >= 0.01 {
+			transaction := firefly.TransactionSplitStore{
+				Amount:       strconv.FormatFloat(math.Abs(difference), 'f', 2, 64),
+				Date:         time.Now(),
+				CategoryName: defaultCategory,
+				Order:        new(int32),
+			}
+			if difference < 0 {
+				transaction.Type = firefly.Withdrawal
+				transaction.SourceId = &account.Id
+				transaction.Description = "Loss"
+			} else {
+				transaction.Type = firefly.Deposit
+				transaction.DestinationId = &account.Id
+				transaction.Description = "Profit"
+			}
+
+			res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{
+				Transactions: []firefly.TransactionSplitStore{transaction},
+			})
+			if err != nil {
+				err = fmt.Errorf("failed to store transaction for account %s: %w", account.Attributes.Name, err)
+				logger.Error(err.Error())
+				errors = append(errors, err)
+				continue
+			}
+			if res.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(res.Body)
+				err = fmt.Errorf("got unexpected status code when storing transaction for account %s: (%s) %s", account.Attributes.Name, res.Status, body)
+				logger.Error(err.Error())
+				errors = append(errors, err)
+				continue
+			}
+			logger.Infof("added transaction to account %s for %.2f to sync the balance", account.Attributes.Name, difference)
+		}
 	}
 }
