@@ -38,6 +38,20 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+func (c *Config) GetDownloadCount() int {
+	count := 0
+	for _, i := range c.Institutions {
+		for _, a := range i.Accounts {
+			for _, s := range a.TransactionsFlow {
+				if s.Step.Type() == chromedp.StepGetTransactions {
+					count++
+				}
+			}
+		}
+	}
+	return count
+}
+
 func NewConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

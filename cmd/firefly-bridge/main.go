@@ -49,7 +49,7 @@ func main() {
 	}
 	logger.Debug("verified connection to firefly")
 
-	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, *cdpDebug)
+	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug)
 	if err != nil {
 		logger.Panicf("failed to setup chromedp: %s", err.Error())
 	}

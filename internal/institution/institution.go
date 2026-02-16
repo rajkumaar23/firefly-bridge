@@ -22,7 +22,7 @@ type Account struct {
 	AccountType      AccountType `yaml:"account_type" validate:"oneof=regular investment"`
 	// TODO: validate last item is chromedp.StepTypeGetBalance
 	BalanceFlow []chromedp.BrowserStep `yaml:"balance" validate:"min=1,dive"`
-	// TODO: validate last item is chromedp.StepTypeGetTransactions
+	// TODO: validate there's at least one chromedp.StepTypeGetTransactions
 	TransactionsFlow []chromedp.BrowserStep `yaml:"transactions" validate:"min=1,dive"`
 }
 

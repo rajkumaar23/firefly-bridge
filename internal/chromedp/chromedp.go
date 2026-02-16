@@ -26,7 +26,7 @@ type ChromeDP struct {
 	downloadChannel chan string
 }
 
-func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, debug bool) (cdp *ChromeDP, err error) {
+func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads int, debug bool) (cdp *ChromeDP, err error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
@@ -78,7 +78,7 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 	if err := cdp.hideWebDriver(); err != nil {
 		return nil, fmt.Errorf("failed to hide web driver: %w", err)
 	}
-	if err := cdp.enableDownloads(downloadsDir); err != nil {
+	if err := cdp.enableDownloads(downloadsDir, downloads); err != nil {
 		return nil, fmt.Errorf("failed to setup download channels: %w", err)
 	}
 
@@ -95,8 +95,8 @@ func (c *ChromeDP) hideWebDriver() error {
 	}))
 }
 
-func (c *ChromeDP) enableDownloads(dir string) error {
-	c.downloadChannel = make(chan string)
+func (c *ChromeDP) enableDownloads(dir string, count int) error {
+	c.downloadChannel = make(chan string, count)
 	chromedp.ListenTarget(c.Ctx, func(v interface{}) {
 		if ev, ok := v.(*browser.EventDownloadProgress); ok {
 			if ev.State == browser.DownloadProgressStateCompleted {
