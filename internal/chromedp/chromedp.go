@@ -280,7 +280,8 @@ func (s SleepStep) Execute(c *ChromeDP, results map[StepType]interface{}) error 
 
 // BalanceStep represents a step to retrieve the balance from a specific element on the page.
 type BalanceStep struct {
-	Selector string `yaml:"selector" validate:"required"`
+	Selector string `yaml:"selector" validate:"required_without=Evaluate"`
+	Evaluate string `yaml:"evaluate" validate:"required_without=Selector"`
 }
 
 func (s BalanceStep) Type() StepType {
@@ -289,7 +290,16 @@ func (s BalanceStep) Type() StepType {
 
 func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 	var result string
-	if err := chromedp.Run(c.Ctx, chromedp.Text(s.Selector, &result)); err != nil {
+	var action chromedp.Action
+	if s.Selector != "" {
+		action = chromedp.Text(s.Selector, &result)
+	} else if s.Evaluate != "" {
+		action = chromedp.Evaluate(s.Evaluate, &result)
+	} else {
+		return fmt.Errorf("either selector or evaluate must be provided")
+	}
+
+	if err := chromedp.Run(c.Ctx, action); err != nil {
 		return err
 	}
 	results[s.Type()] = result
