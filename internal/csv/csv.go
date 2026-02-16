@@ -232,7 +232,9 @@ func (p *Parser) getAmount(record []string) (amount float64, err error) {
 		if err != nil {
 			return 0.0, fmt.Errorf("error parsing debit amount: %w", err)
 		}
-		if p.config.Debit.Negate {
+		// For debit column, we assume that the given absolute amount is negative since it's money going out. 
+		// This can be overriden by setting 'negate' to true in the config.
+		if !p.config.Debit.Negate {
 			amount = -1 * amount
 		}
 		return amount, nil
