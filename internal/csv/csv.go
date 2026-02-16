@@ -68,12 +68,18 @@ func (f *FieldConfig) Validate() error {
 	return nil
 }
 
+type RowCondition struct {
+	Column    int    `yaml:"column" validate:"required"`
+	Value     string `yaml:"value" validate:"required_if=Operation equals|required_if=Operation contains|required_if=Operation starts_with|required_if=Operation ends_with"`
+	Operation string `yaml:"operation" validate:"oneof=equals contains starts_with ends_with empty not_empty"`
+}
+
 // Options defines additional settings for parsing CSV files
 type Options struct {
-	Delimiter    string `yaml:"delimiter"`
-	SkipHeadRows int    `yaml:"skip_head_rows"`
-	SkipTailRows int    `yaml:"skip_tail_rows"`
-	//TODO: add SkipRowConditions to allow skipping rows based on custom conditions (e.g. if a specific column contains a certain value)
+	Delimiter         string         `yaml:"delimiter"`
+	SkipHeadRows      int            `yaml:"skip_head_rows"`
+	SkipTailRows      int            `yaml:"skip_tail_rows"`
+	SkipRowConditions []RowCondition `yaml:"skip_row_conditions"`
 }
 
 type Parser struct {
@@ -86,6 +92,46 @@ type Parser struct {
 func NewParser(ctx context.Context, opts *Options, cfg *FieldConfig) *Parser {
 	logger := utils.GetLogger(ctx)
 	return &Parser{ctx: ctx, logger: logger, opts: opts, config: cfg}
+}
+
+// ShouldSkipRow returns true if the row matches any skip condition based on
+// column index, value, and operation ("equals", "contains", "starts_with", "ends_with", "empty", "not_empty").
+func (o *Options) ShouldSkipRow(row []string) bool {
+	for _, cond := range o.SkipRowConditions {
+		if cond.Column > len(row) || cond.Column <= 0 {
+			continue
+		}
+
+		cell := row[cond.Column-1]
+
+		switch cond.Operation {
+		case "equals":
+			if cell == cond.Value {
+				return true
+			}
+		case "contains":
+			if strings.Contains(cell, cond.Value) {
+				return true
+			}
+		case "starts_with":
+			if strings.HasPrefix(cell, cond.Value) {
+				return true
+			}
+		case "ends_with":
+			if strings.HasSuffix(cell, cond.Value) {
+				return true
+			}
+		case "empty":
+			if strings.TrimSpace(cell) == "" {
+				return true
+			}
+		case "not_empty":
+			if strings.TrimSpace(cell) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Parser) Parse(path string) ([]firefly.TransactionSplit, error) {
@@ -127,25 +173,33 @@ func (p *Parser) Parse(path string) ([]firefly.TransactionSplit, error) {
 
 	var transactions []firefly.TransactionSplit
 	for idx, record := range records {
+		if p.opts.SkipRowConditions != nil {
+			skip := p.opts.ShouldSkipRow(record)
+			if skip {
+				p.logger.Debugf("skipping row %d in file '%s' due to skip conditions", idx+1, path)
+				continue
+			}
+
+		}
 		description, err := p.getDescription(record)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing description for file '%s' (idx=%d): %w", path, idx, err)
+			return nil, fmt.Errorf("error parsing description for file '%s' (row=%d): %w", path, idx+1, err)
 		}
 		date, err := p.getDate(record)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing date for file '%s' (idx=%d): %w", path, idx, err)
+			return nil, fmt.Errorf("error parsing date for file '%s' (row=%d): %w", path, idx+1, err)
 		}
 		amount, err := p.getAmount(record)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing amount for file '%s' (idx=%d): %w", path, idx, err)
+			return nil, fmt.Errorf("error parsing amount for file '%s' (row=%d): %w", path, idx+1, err)
 		}
 		category, err := p.getCategory(record)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing category for file '%s' (idx=%d): %w", path, idx, err)
+			return nil, fmt.Errorf("error parsing category for file '%s' (row=%d): %w", path, idx+1, err)
 		}
 		notes, err := p.getNotes(record)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing notes for file '%s' (idx=%d): %w", path, idx, err)
+			return nil, fmt.Errorf("error parsing notes for file '%s' (row=%d): %w", path, idx+1, err)
 		}
 
 		transaction := &firefly.TransactionSplit{

@@ -3,8 +3,12 @@ module github.com/rajkumaar23/firefly-bridge
 go 1.25.6
 
 require (
+	github.com/PuerkitoBio/goquery v1.11.0
+	github.com/chromedp/chromedp v0.14.2
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/sirupsen/logrus v1.9.4
+	github.com/xuri/excelize/v2 v2.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -32,15 +36,11 @@ require (
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
-	github.com/chromedp/chromedp v0.14.2
 	github.com/go-playground/validator/v10 v10.30.1
-	github.com/go-resty/resty/v2 v2.17.2
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
-	github.com/xuri/excelize/v2 v2.10.0
 	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
