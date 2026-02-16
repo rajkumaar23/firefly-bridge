@@ -12,8 +12,8 @@ import (
 )
 
 type FireflyConfig struct {
-	BaseURL string `yaml:"base_url" validate:"http_url"`
-	Token   string `yaml:"token" validate:"jwt"`
+	Host  string `yaml:"host" validate:"http_url"`
+	Token string `yaml:"token" validate:"jwt"`
 }
 
 type Config struct {

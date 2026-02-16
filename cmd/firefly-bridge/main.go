@@ -7,7 +7,10 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
@@ -40,7 +43,7 @@ func main() {
 	}
 	logger.Debugf("loaded config")
 
-	ff, err := firefly.NewFireflyClient(ctx, cfg.Firefly.BaseURL, cfg.Firefly.Token)
+	ff, err := firefly.NewAPIClient(ctx, cfg.Firefly.Host, cfg.Firefly.Token)
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
@@ -54,6 +57,12 @@ func main() {
 	logger.Debug("chromedp setup complete")
 
 	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
+	totalUploadCount := 0
+	defer func() {
+		if totalUploadCount > 0 {
+			logrus.Infof("%d transactions uploaded at %s/tags/show/%s", totalUploadCount, strings.TrimSuffix(cfg.Firefly.Host, "/"), strings.ReplaceAll(fireflyTag, " ", "%20"))
+		}
+	}()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -88,12 +97,13 @@ func main() {
 				if err != nil {
 					logger.Panicf("failed to check if transaction exists in firefly for '%s - %s': (%s, %s, %s, %s): %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err.Error())
 				}
-				logger.Debugf("transaction for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+				alreadyExistsMsg := ""
 				if !exists {
 					filtered = append(filtered, t)
 				} else {
-					logger.Debugf("transaction for '%s - %s' already exists: (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+					alreadyExistsMsg = "(already exists)"
 				}
+				logger.Debugf("transaction %s for '%s - %s': (%s, %s, %s, %s)", alreadyExistsMsg, i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 			}
 
 			logger.Debugf("got %d filtered transactions for '%s - %s'", len(filtered), i.Name, a.Name)
@@ -110,8 +120,9 @@ func main() {
 					logger.Panicf("got expected status code when storing transaction in firefly for '%s - %s': (%s, %s, %s, %s): (%s) %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
 				}
 				logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+				totalUploadCount++
 			}
-			
+
 			// Verify the (absolute) balances are equal after syncing transactions for this account
 			res, err := ff.GetAccountWithResponse(ctx, strconv.Itoa(a.FireflyAccountID), &firefly.GetAccountParams{})
 			if err != nil {

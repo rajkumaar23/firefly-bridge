@@ -14,7 +14,7 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/market"
 )
 
-func NewFireflyClient(ctx context.Context, host, token string) (*ClientWithResponses, error) {
+func NewAPIClient(ctx context.Context, host, token string) (*ClientWithResponses, error) {
 	ffToken, err := securityprovider.NewSecurityProviderBearerToken(token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security provider: %w", err)
@@ -25,7 +25,7 @@ func NewFireflyClient(ctx context.Context, host, token string) (*ClientWithRespo
 		},
 	}
 	ff, err := NewClientWithResponses(
-		host,
+		fmt.Sprintf("%s/api", strings.TrimSuffix(host, "/")),
 		WithHTTPClient(client),
 		WithRequestEditorFn(ffToken.Intercept),
 		WithRequestEditorFn(func(_ context.Context, req *http.Request) error {

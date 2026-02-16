@@ -1,5 +1,5 @@
 firefly:
-  base_url: "https://firefly.example.com/api"
+  host: "https://firefly.example.com"
   token: "test-json-web-token"
 institutions:
   - name: "Chase"

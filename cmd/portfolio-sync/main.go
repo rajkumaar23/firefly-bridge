@@ -21,7 +21,7 @@ import (
 
 func main() {
 	var debug = flag.Bool("debug", false, "enable debug logs")
-	var baseURL = flag.String("base-url", "", "firefly base url (eg: http://firefly.lan.example.com/api), alternative to setting it via environment $FIREFLY_BASE_URL")
+	var host = flag.String("host", "", "firefly host (eg: http://firefly.lan.example.com), alternative to setting it via environment $FIREFLY_HOST")
 	var token = flag.String("token", "", "firefly access token, alternative to setting it via environment $FIREFLY_TOKEN")
 	var defaultCategory = flag.String("category", "Savings & Investments", "default category for transactions created by this tool")
 	flag.Parse()
@@ -36,12 +36,12 @@ func main() {
 	ctx := context.Background()
 	ctx = utils.WithLogger(ctx, logger)
 
-	if baseURL == nil || *baseURL == "" {
-		if envBaseURL := os.Getenv("FIREFLY_BASE_URL"); envBaseURL != "" {
-			baseURL = &envBaseURL
-			logger.Debugf("using firefly base url from environment variable: %s", *baseURL)
+	if host == nil || *host == "" {
+		if envHost := os.Getenv("FIREFLY_HOST"); envHost != "" {
+			host = &envHost
+			logger.Debugf("using firefly host from environment variable: %s", *host)
 		} else {
-			logger.Panicf("firefly base url not provided, set it via --base-url flag or $FIREFLY_BASE_URL environment variable")
+			logger.Panicf("firefly host not provided, set it via --host flag or $FIREFLY_HOST environment variable")
 		}
 	}
 	if token == nil || *token == "" {
@@ -53,7 +53,7 @@ func main() {
 		}
 	}
 
-	ff, err := firefly.NewFireflyClient(ctx, *baseURL, *token)
+	ff, err := firefly.NewAPIClient(ctx, *host, *token)
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
