@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
@@ -48,6 +51,8 @@ func main() {
 	defer cdp.Close()
 	logger.Debug("chromedp setup complete")
 
+	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
+
 	for _, i := range cfg.Institutions {
 		if err = i.Login(cdp); err != nil {
 			logger.Panicf("failed to login to %s: %s", i.Name, err.Error())
@@ -64,7 +69,10 @@ func main() {
 				logger.Panicf("failed to get transactions for '%s - %s': %s", i.Name, a.Name, err.Error())
 			}
 			logger.Debugf("got %d transactions for '%s - %s'", len(txns), i.Name, a.Name)
-			var filtered []*firefly.TransactionSplit
+
+			// All transactions are filtered at once before starting upload because we DO want to allow duplicates within the transactions
+			// retrieved from the institution in this current run.
+			var filtered []*firefly.TransactionSplitStore
 			for _, t := range txns {
 				exists, err := ff.TransactionExists(ctx, t)
 				if err != nil {
@@ -76,6 +84,22 @@ func main() {
 				} else {
 					logger.Debugf("transaction for '%s - %s' already exists: (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 				}
+			}
+
+			logger.Debugf("got %d filtered transactions for '%s - %s'", len(filtered), i.Name, a.Name)
+
+			for _, t := range filtered {
+				t.Tags = &[]string{fireflyTag}
+				//TODO: optionally use ollama here to identify category of transaction
+				res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{Transactions: []firefly.TransactionSplitStore{*t}})
+				if err != nil {
+					logger.Panicf("failed to store transaction in firefly for '%s - %s': (%s, %s, %s, %s): %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err.Error())
+				}
+				if res.StatusCode != http.StatusOK {
+					body, _ := io.ReadAll(res.Body)
+					logger.Panicf("got expected status code when storing transaction in firefly for '%s - %s': (%s, %s, %s, %s): (%s) %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
+				}
+				logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 			}
 		}
 	}

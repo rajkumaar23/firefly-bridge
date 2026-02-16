@@ -134,7 +134,7 @@ func (o *Options) ShouldSkipRow(row []string) bool {
 	return false
 }
 
-func (p *Parser) Parse(path string) ([]*firefly.TransactionSplit, error) {
+func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -171,7 +171,7 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplit, error) {
 		records = records[:len(records)-p.opts.SkipTailRows]
 	}
 
-	var transactions []*firefly.TransactionSplit
+	var transactions []*firefly.TransactionSplitStore
 	for idx, record := range records {
 		if p.opts.SkipRowConditions != nil {
 			skip := p.opts.ShouldSkipRow(record)
@@ -202,7 +202,7 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplit, error) {
 			return nil, fmt.Errorf("error parsing notes for file '%s' (row=%d): %w", path, idx+1, err)
 		}
 
-		transaction := &firefly.TransactionSplit{
+		transaction := &firefly.TransactionSplitStore{
 			Date:         date,
 			Amount:       strconv.FormatFloat(math.Abs(amount), 'f', 2, 64),
 			Description:  description,
@@ -222,7 +222,7 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplit, error) {
 	return transactions, nil
 }
 
-func (p *Parser) ParseFromExcel(path string, worksheetIndex int) ([]*firefly.TransactionSplit, error) {
+func (p *Parser) ParseFromExcel(path string, worksheetIndex int) ([]*firefly.TransactionSplitStore, error) {
 	xlFile := p.getExcelFile(path)
 
 	worksheets := xlFile.GetSheetList()

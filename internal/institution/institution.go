@@ -40,25 +40,29 @@ func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
 	return utils.ParseAmountFromString(balanceStr)
 }
 
-func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]*firefly.TransactionSplit, error) {
+func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]*firefly.TransactionSplitStore, error) {
 	results, err := cdp.RunSteps(a.TransactionsFlow)
 	if err != nil {
 		return nil, err
 	}
 
-	txns, ok := results[chromedp.StepGetTransactions].([]*firefly.TransactionSplit)
+	txns, ok := results[chromedp.StepGetTransactions].([]*firefly.TransactionSplitStore)
 	if !ok {
 		return nil, fmt.Errorf("failed to retrieve transactions")
 	}
 
-	// Based on each transaction's type, set the source/destination ID with FireflyAccountID from config.
 	accountIDStr := strconv.Itoa(a.FireflyAccountID)
 	for _, t := range txns {
+		// Based on each transaction's type, set the source/destination ID with FireflyAccountID from config.
 		if t.Type == firefly.Withdrawal {
 			t.SourceId = &accountIDStr
 		} else {
 			t.DestinationId = &accountIDStr
 		}
+
+		// Set the internal reference to the hash of the transaction to lateravoid duplicates in Firefly.
+		hash := t.HashV2()
+		t.InternalReference = &hash
 	}
 
 	return txns, nil

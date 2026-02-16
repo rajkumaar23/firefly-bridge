@@ -105,7 +105,7 @@ func (h *FireflyHoldings) GetTotalValue(market *market.Market) (float64, error) 
 
 // HashV2 generates a hash of the transaction using its date, description, amount, type and account ID (source for withdrawals and destination for deposits).
 // This is used to check if a transaction already exists in Firefly before creating it, to avoid duplicates.
-func (t *TransactionSplit) HashV2() string {
+func (t *TransactionSplitStore) HashV2() string {
 	h := sha256.New()
 	var accountID *string
 	if t.Type == Withdrawal {
@@ -118,10 +118,10 @@ func (t *TransactionSplit) HashV2() string {
 	return fmt.Sprintf("v2:%s", hex.EncodeToString(h.Sum(nil)[:]))
 }
 
-// TransactionExists checks if a transaction with the same hash already exists in Firefly. 
+// TransactionExists checks if a transaction with the same hash already exists in Firefly.
 // This is used to avoid creating duplicate transactions in Firefly.
-func (ff *ClientWithResponses) TransactionExists(ctx context.Context, transaction *TransactionSplit) (bool, error) {
-	res, err := ff.SearchTransactionsWithResponse(ctx, &SearchTransactionsParams{Query: fmt.Sprintf("internal_reference_is:\"%s\"", transaction.HashV2())})
+func (ff *ClientWithResponses) TransactionExists(ctx context.Context, transaction *TransactionSplitStore) (bool, error) {
+	res, err := ff.SearchTransactionsWithResponse(ctx, &SearchTransactionsParams{Query: fmt.Sprintf("internal_reference_is:\"%s\"", *transaction.InternalReference)})
 	if err != nil {
 		return false, fmt.Errorf("failed to check if transaction exists: %w", err)
 	}
