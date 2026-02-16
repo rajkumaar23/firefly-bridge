@@ -125,6 +125,7 @@ func (c *ChromeDP) RunSteps(steps []BrowserStep) (map[StepType]interface{}, erro
 		if err := step.Step.Execute(c, results); err != nil {
 			return nil, fmt.Errorf("error executing step %s: %w", step.Step.Type(), err)
 		}
+		time.Sleep(time.Second)
 	}
 	return results, nil
 }
