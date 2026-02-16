@@ -2,6 +2,7 @@ package institution
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
@@ -39,15 +40,25 @@ func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
 	return utils.ParseAmountFromString(balanceStr)
 }
 
-func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]firefly.TransactionSplit, error) {
+func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]*firefly.TransactionSplit, error) {
 	results, err := cdp.RunSteps(a.TransactionsFlow)
 	if err != nil {
 		return nil, err
 	}
 
-	txns, ok := results[chromedp.StepGetTransactions].([]firefly.TransactionSplit)
+	txns, ok := results[chromedp.StepGetTransactions].([]*firefly.TransactionSplit)
 	if !ok {
 		return nil, fmt.Errorf("failed to retrieve transactions")
+	}
+
+	// Based on each transaction's type, set the source/destination ID with FireflyAccountID from config.
+	accountIDStr := strconv.Itoa(a.FireflyAccountID)
+	for _, t := range txns {
+		if t.Type == firefly.Withdrawal {
+			t.SourceId = &accountIDStr
+		} else {
+			t.DestinationId = &accountIDStr
+		}
 	}
 
 	return txns, nil

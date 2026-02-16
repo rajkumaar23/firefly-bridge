@@ -35,7 +35,7 @@ func main() {
 	}
 	logger.Debugf("loaded config")
 
-	_, err = firefly.NewFireflyClient(ctx, cfg.Firefly.BaseURL, cfg.Firefly.Token)
+	ff, err := firefly.NewFireflyClient(ctx, cfg.Firefly.BaseURL, cfg.Firefly.Token)
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
@@ -64,8 +64,18 @@ func main() {
 				logger.Panicf("failed to get transactions for '%s - %s': %s", i.Name, a.Name, err.Error())
 			}
 			logger.Debugf("got %d transactions for '%s - %s'", len(txns), i.Name, a.Name)
+			var filtered []*firefly.TransactionSplit
 			for _, t := range txns {
+				exists, err := ff.TransactionExists(ctx, t)
+				if err != nil {
+					logger.Panicf("failed to check if transaction exists in firefly for '%s - %s': (%s, %s, %s, %s): %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err.Error())
+				}
 				logger.Debugf("transaction for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+				if !exists {
+					filtered = append(filtered, t)
+				} else {
+					logger.Debugf("transaction for '%s - %s' already exists: (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+				}
 			}
 		}
 	}

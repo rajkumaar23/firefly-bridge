@@ -134,7 +134,7 @@ func (o *Options) ShouldSkipRow(row []string) bool {
 	return false
 }
 
-func (p *Parser) Parse(path string) ([]firefly.TransactionSplit, error) {
+func (p *Parser) Parse(path string) ([]*firefly.TransactionSplit, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -171,7 +171,7 @@ func (p *Parser) Parse(path string) ([]firefly.TransactionSplit, error) {
 		records = records[:len(records)-p.opts.SkipTailRows]
 	}
 
-	var transactions []firefly.TransactionSplit
+	var transactions []*firefly.TransactionSplit
 	for idx, record := range records {
 		if p.opts.SkipRowConditions != nil {
 			skip := p.opts.ShouldSkipRow(record)
@@ -216,13 +216,13 @@ func (p *Parser) Parse(path string) ([]firefly.TransactionSplit, error) {
 			transaction.Type = "deposit"
 		}
 
-		transactions = append(transactions, *transaction)
+		transactions = append(transactions, transaction)
 	}
 
 	return transactions, nil
 }
 
-func (p *Parser) ParseFromExcel(path string, worksheetIndex int) ([]firefly.TransactionSplit, error) {
+func (p *Parser) ParseFromExcel(path string, worksheetIndex int) ([]*firefly.TransactionSplit, error) {
 	xlFile := p.getExcelFile(path)
 
 	worksheets := xlFile.GetSheetList()
