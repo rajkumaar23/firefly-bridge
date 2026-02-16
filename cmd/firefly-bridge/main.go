@@ -55,6 +55,14 @@ func main() {
 
 	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
 
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for sig := range c {
+			logrus.Panicf("SIGINT received %s", sig.String())
+		}
+	}()
+
 	for _, i := range cfg.Institutions {
 		if err = i.Login(cdp); err != nil {
 			logger.Panicf("failed to login to %s: %s", i.Name, err.Error())
