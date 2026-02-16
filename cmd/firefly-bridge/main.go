@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
@@ -100,6 +102,23 @@ func main() {
 					logger.Panicf("got expected status code when storing transaction in firefly for '%s - %s': (%s, %s, %s, %s): (%s) %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
 				}
 				logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+			}
+			
+			// Verify the (absolute) balances are equal after syncing transactions for this account
+			res, err := ff.GetAccountWithResponse(ctx, strconv.Itoa(a.FireflyAccountID), &firefly.GetAccountParams{})
+			if err != nil {
+				logger.Panicf("failed to check updated firefly balance for %s - %s: %s", i.Name, a.Name, err.Error())
+			}
+			if res.ApplicationvndApiJSON200 == nil {
+				logger.Panicf("unexpected status code in checking updated firefly balance for %s - %s: (%s) %s", i.Name, a.Name, res.Status(), res.Body)
+			}
+			updatedFireflyBalanceStr := res.ApplicationvndApiJSON200.Data.Attributes.CurrentBalance
+			updatedFireflyBalance, err := strconv.ParseFloat(*updatedFireflyBalanceStr, 64)
+			if err != nil {
+				logger.Panicf("failed to parse updated firefly balance for %s - %s: %s", i.Name, a.Name, err.Error())
+			}
+			if math.Abs(balance) != math.Abs(updatedFireflyBalance) {
+				logger.Warnf("balance mismatch: firefly: %f, bank: %f", updatedFireflyBalance, balance)
 			}
 		}
 	}
