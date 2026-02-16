@@ -209,7 +209,8 @@ func (s NavigateStep) Execute(c *ChromeDP, results map[StepType]interface{}) err
 
 // WaitStep represents a step to wait until a specific element is visible on the page.
 type WaitStep struct {
-	Selector string `yaml:"selector" validate:"required"`
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
 }
 
 func (s WaitStep) Type() StepType {
@@ -217,12 +218,16 @@ func (s WaitStep) Type() StepType {
 }
 
 func (s WaitStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.JSPath, chromedp.ByJSPath))
+	}
 	return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.Selector))
 }
 
 // ClickStep represents a step to click on a specific element on the page.
 type ClickStep struct {
-	Selector string `yaml:"selector" validate:"required"`
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
 }
 
 func (s ClickStep) Type() StepType {
@@ -230,12 +235,16 @@ func (s ClickStep) Type() StepType {
 }
 
 func (s ClickStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.Click(s.JSPath, chromedp.ByJSPath))
+	}
 	return chromedp.Run(c.Ctx, chromedp.Click(s.Selector))
 }
 
 // SendKeyStep represents a step to send keys (input) to a specific element on the page.
 type SendKeyStep struct {
-	Selector string `yaml:"selector" validate:"required"`
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
 	Value    string `yaml:"value" validate:"required"`
 }
 
@@ -248,12 +257,16 @@ func (s SendKeyStep) Execute(c *ChromeDP, results map[StepType]interface{}) erro
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.SendKeys(s.JSPath, val, chromedp.ByJSPath))
+	}
 	return chromedp.Run(c.Ctx, chromedp.SendKeys(s.Selector, val))
 }
 
 // SetValueStep represents a step to set a value for a specific element on the page.
 type SetValueStep struct {
-	Selector string `yaml:"selector" validate:"required"`
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
 	Value    string `yaml:"value" validate:"required"`
 }
 
