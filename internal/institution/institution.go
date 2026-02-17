@@ -17,9 +17,9 @@ const (
 )
 
 type Account struct {
-	Name             string      `yaml:"name" validate:"required"`
-	FireflyAccountID int         `yaml:"firefly_account_id" validate:"required"`
-	AccountType      AccountType `yaml:"account_type" validate:"oneof=regular investment"`
+	Name             string                 `yaml:"name" validate:"required"`
+	FireflyAccountID int                    `yaml:"firefly_account_id" validate:"required"`
+	AccountType      AccountType            `yaml:"account_type" validate:"oneof=regular investment"`
 	BalanceFlow      []chromedp.BrowserStep `yaml:"balance" validate:"dive"`
 	TransactionsFlow []chromedp.BrowserStep `yaml:"transactions" validate:"dive"`
 	HoldingsFlow     []chromedp.BrowserStep `yaml:"holdings" validate:"dive"`

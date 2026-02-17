@@ -1,9 +1,11 @@
 package firefly
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -153,17 +155,22 @@ func (ff *ClientWithResponses) UpdateAccountHoldings(ctx context.Context, accoun
 	notesStr := holdings.Format()
 
 	// Prepare update request
-	accountUpdate := AccountUpdate{
-		Notes: &notesStr,
+	accountUpdate := map[string]interface{}{
+		"notes": &notesStr,
 	}
 
-	res, err := ff.UpdateAccountWithResponse(ctx, accountIDStr, &UpdateAccountParams{}, accountUpdate)
+	body, err := json.Marshal(accountUpdate)
+	if err != nil {
+		return fmt.Errorf("failed to marshal account update: %w", err)
+	}
+
+	res, err := ff.UpdateAccountWithBodyWithResponse(ctx, accountIDStr, &UpdateAccountParams{}, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("failed to update account: %w", err)
 	}
 
 	if res.ApplicationvndApiJSON200 == nil {
-		return fmt.Errorf("unexpected status code: %s", res.Status())
+		return fmt.Errorf("unexpected status code: (%s) %s", res.Status(), res.Body)
 	}
 
 	return nil
