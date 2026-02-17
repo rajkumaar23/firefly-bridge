@@ -7,6 +7,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/csv"
+	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +24,7 @@ const (
 	StepSetValue        StepType = "set_value"
 	StepGetBalance      StepType = "balance"
 	StepGetTransactions StepType = "transactions"
+	StepGetHoldings     StepType = "holdings"
 )
 
 type BrowserStep struct {
@@ -59,6 +61,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &BalanceStep{}
 	case StepGetTransactions:
 		step = &GetTransactionsStep{}
+	case StepGetHoldings:
+		step = &HoldingsStep{}
 	default:
 		return fmt.Errorf("unknown browser step type: %s", typeHolder.Type)
 	}
@@ -220,6 +224,73 @@ func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) erro
 	}
 	results[s.Type()] = result
 	return nil
+}
+
+// HoldingsStep represents a step to retrieve stock holdings from the page
+// Multiple holdings steps will merge their results into a single map
+type HoldingsStep struct {
+	Evaluate string `yaml:"evaluate" validate:"required"`
+}
+
+func (s HoldingsStep) Type() StepType {
+	return StepGetHoldings
+}
+
+func (s HoldingsStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	var jsResult interface{}
+	action := chromedp.Evaluate(s.Evaluate, &jsResult)
+
+	if err := chromedp.Run(c.Ctx, action); err != nil {
+		return fmt.Errorf("failed to evaluate holdings JavaScript: %w", err)
+	}
+
+	// Parse the JavaScript result into FireflyHoldings
+	holdings, err := parseHoldingsFromJS(jsResult)
+	if err != nil {
+		return fmt.Errorf("failed to parse holdings from JavaScript result: %w", err)
+	}
+
+	// Merge with existing holdings if any (allows multiple holdings steps)
+	if existingHoldings, ok := results[s.Type()].(*firefly.FireflyHoldings); ok {
+		for symbol, qty := range *holdings {
+			(*existingHoldings)[symbol] = qty
+		}
+	} else {
+		results[s.Type()] = holdings
+	}
+
+	return nil
+}
+
+// parseHoldingsFromJS converts JavaScript evaluation result to FireflyHoldings
+// Expects a JavaScript object like: {symbol: quantity, symbol2: quantity2}
+func parseHoldingsFromJS(jsResult interface{}) (*firefly.FireflyHoldings, error) {
+	holdings := make(firefly.FireflyHoldings)
+
+	// JavaScript returns map[string]interface{} for objects
+	rawMap, ok := jsResult.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("expected JavaScript object, got %T", jsResult)
+	}
+
+	for symbol, value := range rawMap {
+		// Convert quantity to float64
+		var qty float64
+		switch v := value.(type) {
+		case float64:
+			qty = v
+		case int:
+			qty = float64(v)
+		case int64:
+			qty = float64(v)
+		default:
+			return nil, fmt.Errorf("unsupported quantity type for symbol %s: %T", symbol, value)
+		}
+
+		holdings[symbol] = qty
+	}
+
+	return &holdings, nil
 }
 
 type (

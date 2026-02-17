@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -101,6 +103,70 @@ func (h *FireflyHoldings) GetTotalValue(market *market.Market) (float64, error) 
 	}
 
 	return total, nil
+}
+
+// Format converts holdings to the format expected in Firefly notes field
+// Format: "symbol=qty,symbol2=qty2,..." (sorted for consistent comparison)
+func (h *FireflyHoldings) Format() string {
+	if h == nil || len(*h) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for symbol, qty := range *h {
+		parts = append(parts, fmt.Sprintf("%s=%.8f", symbol, qty))
+	}
+
+	sort.Strings(parts) // Deterministic ordering
+	return strings.Join(parts, ",")
+}
+
+// Equal compares two holdings for equality (with float epsilon)
+func (h *FireflyHoldings) Equal(other *FireflyHoldings) bool {
+	if h == nil && other == nil {
+		return true
+	}
+	if h == nil || other == nil {
+		return false
+	}
+	if len(*h) != len(*other) {
+		return false
+	}
+
+	for symbol, qtyA := range *h {
+		qtyB, exists := (*other)[symbol]
+		if !exists {
+			return false
+		}
+		// Use epsilon for float comparison
+		if math.Abs(qtyA-qtyB) > 0.00000001 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// UpdateAccountHoldings updates the holdings (notes field) for a Firefly account
+func (ff *ClientWithResponses) UpdateAccountHoldings(ctx context.Context, accountID int, holdings *FireflyHoldings) error {
+	accountIDStr := strconv.Itoa(accountID)
+	notesStr := holdings.Format()
+
+	// Prepare update request
+	accountUpdate := AccountUpdate{
+		Notes: &notesStr,
+	}
+
+	res, err := ff.UpdateAccountWithResponse(ctx, accountIDStr, &UpdateAccountParams{}, accountUpdate)
+	if err != nil {
+		return fmt.Errorf("failed to update account: %w", err)
+	}
+
+	if res.ApplicationvndApiJSON200 == nil {
+		return fmt.Errorf("unexpected status code: %s", res.Status())
+	}
+
+	return nil
 }
 
 // HashV2 generates a hash of the transaction using its date, description, amount, type and account ID (source for withdrawals and destination for deposits).

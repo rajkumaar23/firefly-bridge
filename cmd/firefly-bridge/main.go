@@ -16,6 +16,7 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/config"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
+	"github.com/rajkumaar23/firefly-bridge/internal/institution"
 	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"github.com/sirupsen/logrus"
@@ -85,67 +86,139 @@ func main() {
 		}
 		logger.Debugf("logged in to '%s' successfully", i.Name)
 		for _, a := range i.Accounts {
-			balance, err := a.GetBalance(cdp)
-			if err != nil {
-				logger.Panicf("failed to get balance for '%s - %s': %s", i.Name, a.Name, err.Error())
-			}
-			logger.Debugf("balance for '%s - %s': %.2f", i.Name, a.Name, balance)
-			txns, err := a.GetTransactions(cdp)
-			if err != nil {
-				logger.Panicf("failed to get transactions for '%s - %s': %s", i.Name, a.Name, err.Error())
-			}
-			logger.Debugf("got %d transactions for '%s - %s'", len(txns), i.Name, a.Name)
-
-			// All transactions are filtered at once before starting upload because we DO want to allow duplicates within the transactions
-			// retrieved from the institution in this current run.
-			var filtered []*firefly.TransactionSplitStore
-			for _, t := range txns {
-				exists, err := ff.TransactionExists(ctx, t)
-				if err != nil {
-					logger.Panicf("failed to check if transaction exists in firefly for '%s - %s': (%s, %s, %s, %s): %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err.Error())
+			if a.AccountType == institution.AccountTypeInvestment {
+				if err := processInvestmentAccount(ctx, logger, cdp, ff, i.Name, &a); err != nil {
+					logger.Panicf("failed to process investment account '%s - %s': %s", i.Name, a.Name, err.Error())
 				}
-				alreadyExistsMsg := ""
-				if !exists {
-					filtered = append(filtered, t)
-				} else {
-					alreadyExistsMsg = "(already exists)"
+			} else {
+				if err := processRegularAccount(ctx, logger, cdp, ff, i.Name, &a, &totalUploadCount, fireflyTag); err != nil {
+					logger.Panicf("failed to process regular account '%s - %s': %s", i.Name, a.Name, err.Error())
 				}
-				logger.Debugf("transaction %s for '%s - %s': (%s, %s, %s, %s)", alreadyExistsMsg, i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
-			}
-
-			logger.Debugf("got %d filtered transactions for '%s - %s'", len(filtered), i.Name, a.Name)
-
-			for _, t := range filtered {
-				t.Tags = &[]string{fireflyTag}
-				//TODO: optionally use ollama here to identify category of transaction
-				res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{Transactions: []firefly.TransactionSplitStore{*t}})
-				if err != nil {
-					logger.Panicf("failed to store transaction in firefly for '%s - %s': (%s, %s, %s, %s): %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err.Error())
-				}
-				if res.StatusCode != http.StatusOK {
-					body, _ := io.ReadAll(res.Body)
-					logger.Panicf("got unexpected status code when storing transaction in firefly for '%s - %s': (%s, %s, %s, %s): (%s) %s", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
-				}
-				logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", i.Name, a.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
-				totalUploadCount++
-			}
-
-			// Verify the (absolute) balances are equal after syncing transactions for this account
-			res, err := ff.GetAccountWithResponse(ctx, strconv.Itoa(a.FireflyAccountID), &firefly.GetAccountParams{})
-			if err != nil {
-				logger.Panicf("failed to check updated firefly balance for %s - %s: %s", i.Name, a.Name, err.Error())
-			}
-			if res.ApplicationvndApiJSON200 == nil {
-				logger.Panicf("unexpected status code in checking updated firefly balance for %s - %s: (%s) %s", i.Name, a.Name, res.Status(), res.Body)
-			}
-			updatedFireflyBalanceStr := res.ApplicationvndApiJSON200.Data.Attributes.CurrentBalance
-			updatedFireflyBalance, err := strconv.ParseFloat(*updatedFireflyBalanceStr, 64)
-			if err != nil {
-				logger.Panicf("failed to parse updated firefly balance for %s - %s: %s", i.Name, a.Name, err.Error())
-			}
-			if math.Abs(balance) != math.Abs(updatedFireflyBalance) {
-				logger.Warnf("balance mismatch: firefly: %f, bank: %f", updatedFireflyBalance, balance)
 			}
 		}
 	}
+}
+
+// processInvestmentAccount handles investment account synchronization
+func processInvestmentAccount(ctx context.Context, logger *logrus.Logger, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, institutionName string, account *institution.Account) error {
+	holdings, err := account.GetHoldings(cdp)
+	if err != nil {
+		return fmt.Errorf("failed to get holdings: %w", err)
+	}
+	logger.Infof("got %d holdings for '%s - %s'", len(*holdings), institutionName, account.Name)
+
+	for symbol, qty := range *holdings {
+		logger.Debugf("  %s = %.8f", symbol, qty)
+	}
+
+	accountIDStr := strconv.Itoa(account.FireflyAccountID)
+	res, err := ff.GetAccountWithResponse(ctx, accountIDStr, &firefly.GetAccountParams{})
+	if err != nil {
+		return fmt.Errorf("failed to get firefly account: %w", err)
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return fmt.Errorf("unexpected status code: (%s) %s", res.Status(), res.Body)
+	}
+
+	currentHoldings, err := res.ApplicationvndApiJSON200.Data.GetHoldings()
+	if err != nil {
+		return fmt.Errorf("failed to parse current holdings: %w", err)
+	}
+
+	if holdings.Equal(currentHoldings) {
+		logger.Infof("holdings unchanged for '%s - %s', skipping update", institutionName, account.Name)
+		return nil
+	}
+
+	logger.Infof("holdings changed for '%s - %s':", institutionName, account.Name)
+	for symbol, newQty := range *holdings {
+		oldQty := float64(0)
+		if currentHoldings != nil {
+			oldQty = (*currentHoldings)[symbol]
+		}
+		if oldQty == 0 {
+			logger.Infof("  %s: new holding %.8f", symbol, newQty)
+		} else if math.Abs(oldQty-newQty) > 0.00000001 {
+			logger.Infof("  %s: %.8f → %.8f (Δ %.8f)", symbol, oldQty, newQty, newQty-oldQty)
+		}
+	}
+	if currentHoldings != nil {
+		for symbol, oldQty := range *currentHoldings {
+			if _, exists := (*holdings)[symbol]; !exists {
+				logger.Infof("  %s: %.8f → removed", symbol, oldQty)
+			}
+		}
+	}
+
+	if err := ff.UpdateAccountHoldings(ctx, account.FireflyAccountID, holdings); err != nil {
+		return fmt.Errorf("failed to update holdings: %w", err)
+	}
+	logger.Infof("updated holdings for '%s - %s'", institutionName, account.Name)
+
+	return nil
+}
+
+// processRegularAccount handles regular account synchronization
+func processRegularAccount(ctx context.Context, logger *logrus.Logger, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, institutionName string, account *institution.Account, totalUploadCount *int, fireflyTag string) error {
+	balance, err := account.GetBalance(cdp)
+	if err != nil {
+		return fmt.Errorf("failed to get balance: %w", err)
+	}
+	logger.Debugf("balance for '%s - %s': %.2f", institutionName, account.Name, balance)
+
+	txns, err := account.GetTransactions(cdp)
+	if err != nil {
+		return fmt.Errorf("failed to get transactions: %w", err)
+	}
+	logger.Debugf("got %d transactions for '%s - %s'", len(txns), institutionName, account.Name)
+
+	var filtered []*firefly.TransactionSplitStore
+	for _, t := range txns {
+		exists, err := ff.TransactionExists(ctx, t)
+		if err != nil {
+			return fmt.Errorf("failed to check if transaction exists: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
+		}
+		alreadyExistsMsg := ""
+		if !exists {
+			filtered = append(filtered, t)
+		} else {
+			alreadyExistsMsg = "(already exists)"
+		}
+		logger.Debugf("transaction %s for '%s - %s': (%s, %s, %s, %s)", alreadyExistsMsg, institutionName, account.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+	}
+
+	logger.Debugf("got %d filtered transactions for '%s - %s'", len(filtered), institutionName, account.Name)
+
+	for _, t := range filtered {
+		t.Tags = &[]string{fireflyTag}
+		//TODO: optionally use ollama here to identify category of transaction
+		res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{Transactions: []firefly.TransactionSplitStore{*t}})
+		if err != nil {
+			return fmt.Errorf("failed to store transaction: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
+		}
+		if res.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(res.Body)
+			return fmt.Errorf("unexpected status code: (%s, %s, %s, %s): (%s) %s", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
+		}
+		logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", institutionName, account.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+		*totalUploadCount++
+	}
+
+	res, err := ff.GetAccountWithResponse(ctx, strconv.Itoa(account.FireflyAccountID), &firefly.GetAccountParams{})
+	if err != nil {
+		return fmt.Errorf("failed to check updated firefly balance: %w", err)
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return fmt.Errorf("unexpected status code: (%s) %s", res.Status(), res.Body)
+	}
+	updatedFireflyBalanceStr := res.ApplicationvndApiJSON200.Data.Attributes.CurrentBalance
+	updatedFireflyBalance, err := strconv.ParseFloat(*updatedFireflyBalanceStr, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse updated firefly balance: %w", err)
+	}
+	if math.Abs(balance) != math.Abs(updatedFireflyBalance) {
+		logger.Warnf("balance mismatch: firefly: %f, bank: %f", updatedFireflyBalance, balance)
+	}
+
+	return nil
 }

@@ -20,10 +20,9 @@ type Account struct {
 	Name             string      `yaml:"name" validate:"required"`
 	FireflyAccountID int         `yaml:"firefly_account_id" validate:"required"`
 	AccountType      AccountType `yaml:"account_type" validate:"oneof=regular investment"`
-	// TODO: validate last item is chromedp.StepTypeGetBalance
-	BalanceFlow []chromedp.BrowserStep `yaml:"balance" validate:"min=1,dive"`
-	// TODO: validate there's at least one chromedp.StepTypeGetTransactions
-	TransactionsFlow []chromedp.BrowserStep `yaml:"transactions" validate:"min=1,dive"`
+	BalanceFlow      []chromedp.BrowserStep `yaml:"balance" validate:"dive"`
+	TransactionsFlow []chromedp.BrowserStep `yaml:"transactions" validate:"dive"`
+	HoldingsFlow     []chromedp.BrowserStep `yaml:"holdings" validate:"dive"`
 }
 
 func (a *Account) GetBalance(cdp *chromedp.ChromeDP) (float64, error) {
@@ -69,6 +68,20 @@ func (a *Account) GetTransactions(cdp *chromedp.ChromeDP) ([]*firefly.Transactio
 	}
 
 	return txns, nil
+}
+
+func (a *Account) GetHoldings(cdp *chromedp.ChromeDP) (*firefly.FireflyHoldings, error) {
+	results, err := cdp.RunSteps(a.HoldingsFlow)
+	if err != nil {
+		return nil, err
+	}
+
+	holdings, ok := results[chromedp.StepGetHoldings].(*firefly.FireflyHoldings)
+	if !ok {
+		return nil, fmt.Errorf("failed to retrieve holdings")
+	}
+
+	return holdings, nil
 }
 
 type Institution struct {
