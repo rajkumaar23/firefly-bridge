@@ -1,0 +1,251 @@
+package chromedp
+
+import (
+	"fmt"
+	"path/filepath"
+	"time"
+
+	"github.com/chromedp/chromedp"
+	"github.com/rajkumaar23/firefly-bridge/internal/csv"
+	"github.com/rajkumaar23/firefly-bridge/internal/utils"
+	"gopkg.in/yaml.v3"
+)
+
+type StepType string
+
+const (
+	StepNavigate        StepType = "navigate"
+	StepWait            StepType = "wait_visible"
+	StepClick           StepType = "click"
+	StepSleep           StepType = "sleep"
+	StepReload          StepType = "reload"
+	StepSendKey         StepType = "send_keys"
+	StepSetValue        StepType = "set_value"
+	StepGetBalance      StepType = "balance"
+	StepGetTransactions StepType = "transactions"
+)
+
+type BrowserStep struct {
+	Step Step
+}
+
+func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
+	var typeHolder struct {
+		Type StepType `yaml:"type"`
+	}
+
+	if err := value.Decode(&typeHolder); err != nil {
+		return err
+	}
+
+	var step Step
+
+	switch typeHolder.Type {
+	case StepNavigate:
+		step = &NavigateStep{}
+	case StepWait:
+		step = &WaitStep{}
+	case StepClick:
+		step = &ClickStep{}
+	case StepSleep:
+		step = &SleepStep{}
+	case StepReload:
+		step = &ReloadStep{}
+	case StepSendKey:
+		step = &SendKeyStep{}
+	case StepSetValue:
+		step = &SetValueStep{}
+	case StepGetBalance:
+		step = &BalanceStep{}
+	case StepGetTransactions:
+		step = &GetTransactionsStep{}
+	default:
+		return fmt.Errorf("unknown browser step type: %s", typeHolder.Type)
+	}
+
+	if err := value.Decode(step); err != nil {
+		return err
+	}
+
+	b.Step = step
+	return nil
+}
+
+type Step interface {
+	Type() StepType
+	Execute(c *ChromeDP, results map[StepType]interface{}) error
+}
+
+// Below are implementations of different step types.
+// Each step type has its own struct and implements the Step interface.
+
+// NavigateStep represents a step to navigate to a specific URL.
+type NavigateStep struct {
+	URL string `yaml:"url" validate:"required,http_url"`
+}
+
+func (s NavigateStep) Type() StepType {
+	return StepNavigate
+}
+
+func (s NavigateStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Navigate(s.URL))
+}
+
+// WaitStep represents a step to wait until a specific element is visible on the page.
+type WaitStep struct {
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
+}
+
+func (s WaitStep) Type() StepType {
+	return StepWait
+}
+
+func (s WaitStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.JSPath, chromedp.ByJSPath))
+	}
+	return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.Selector))
+}
+
+// ClickStep represents a step to click on a specific element on the page.
+type ClickStep struct {
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
+}
+
+func (s ClickStep) Type() StepType {
+	return StepClick
+}
+
+func (s ClickStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.Click(s.JSPath, chromedp.ByJSPath))
+	}
+	return chromedp.Run(c.Ctx, chromedp.Click(s.Selector))
+}
+
+// SendKeyStep represents a step to send keys (input) to a specific element on the page.
+type SendKeyStep struct {
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
+	Value    string `yaml:"value" validate:"required"`
+}
+
+func (s SendKeyStep) Type() StepType {
+	return StepSendKey
+}
+
+func (s SendKeyStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	val, err := utils.ParseTemplate(s.Value)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.SendKeys(s.JSPath, val, chromedp.ByJSPath))
+	}
+	return chromedp.Run(c.Ctx, chromedp.SendKeys(s.Selector, val))
+}
+
+// SetValueStep represents a step to set a value for a specific element on the page.
+type SetValueStep struct {
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
+	Value    string `yaml:"value" validate:"required"`
+}
+
+func (s SetValueStep) Type() StepType {
+	return StepSetValue
+}
+
+func (s SetValueStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	val, err := utils.ParseTemplate(s.Value)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.SetValue(s.JSPath, val, chromedp.ByJSPath))
+	}
+	return chromedp.Run(c.Ctx, chromedp.SetValue(s.Selector, val))
+}
+
+// SleepStep represents a step to pause execution for a specified duration.
+type SleepStep struct {
+	Duration time.Duration `yaml:"duration" validate:"required"`
+}
+
+func (s SleepStep) Type() StepType {
+	return StepSleep
+}
+
+func (s SleepStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Sleep(s.Duration))
+}
+
+// ReloadStep represents a step to reload the current page.
+type ReloadStep struct{}
+
+func (r ReloadStep) Type() StepType {
+	return StepReload
+}
+
+func (r ReloadStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	return chromedp.Run(c.Ctx, chromedp.Reload())
+}
+
+// BalanceStep represents a step to retrieve the balance from a specific element on the page.
+type BalanceStep struct {
+	Selector string `yaml:"selector" validate:"required_without=Evaluate"`
+	Evaluate string `yaml:"evaluate" validate:"required_without=Selector"`
+}
+
+func (s BalanceStep) Type() StepType {
+	return StepGetBalance
+}
+
+func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	var result string
+	var action chromedp.Action
+	if s.Selector != "" {
+		action = chromedp.Text(s.Selector, &result)
+	} else if s.Evaluate != "" {
+		action = chromedp.Evaluate(s.Evaluate, &result)
+	} else {
+		return fmt.Errorf("either selector or evaluate must be provided")
+	}
+
+	if err := chromedp.Run(c.Ctx, action); err != nil {
+		return err
+	}
+	results[s.Type()] = result
+	return nil
+}
+
+type (
+	GetTransactionsStep struct {
+		CSV struct {
+			Opts   *csv.Options     `yaml:"options"`
+			Config *csv.FieldConfig `yaml:"fields" validate:"required,validateFn"`
+		} `yaml:"csv" validate:"required"`
+	}
+)
+
+func (s GetTransactionsStep) Type() StepType {
+	return StepGetTransactions
+}
+
+func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	fileName := <-c.downloadChannel
+	logger := utils.GetLogger(c.Ctx)
+	logger.Debugf("received download event for file: %s", fileName)
+
+	parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config)
+	transactions, err := parser.Parse(filepath.Join(c.downloadPath, fileName))
+	if err != nil {
+		return fmt.Errorf("error parsing transactions: %w", err)
+	}
+
+	results[s.Type()] = transactions
+	return nil
+}
