@@ -138,7 +138,7 @@ func (s SendKeyStep) Type() StepType {
 }
 
 func (s SendKeyStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
-	val, err := utils.ParseTemplate(s.Value)
+	val, err := utils.ParseTemplate(c.Ctx, s.Value, c.secretResolver)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
@@ -160,7 +160,7 @@ func (s SetValueStep) Type() StepType {
 }
 
 func (s SetValueStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
-	val, err := utils.ParseTemplate(s.Value)
+	val, err := utils.ParseTemplate(c.Ctx, s.Value, c.secretResolver)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}

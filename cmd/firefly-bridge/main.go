@@ -16,6 +16,7 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/config"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
+	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"github.com/sirupsen/logrus"
 )
@@ -43,13 +44,19 @@ func main() {
 	}
 	logger.Debugf("loaded config")
 
+	secretManager, err := secrets.NewManagerFromConfig(ctx, cfg.Secrets)
+	if err != nil {
+		logger.Panicf("failed to create secret manager: %s", err.Error())
+	}
+	logger.Debug("initialized secret manager")
+
 	ff, err := firefly.NewAPIClient(ctx, cfg.Firefly.Host, cfg.Firefly.Token)
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
 	logger.Debug("verified connection to firefly")
 
-	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug)
+	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug, secretManager)
 	if err != nil {
 		logger.Panicf("failed to setup chromedp: %s", err.Error())
 	}

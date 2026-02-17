@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -24,8 +25,24 @@ func isTemplateString(s string) bool {
 	return strings.Contains(s, "{{") && strings.Contains(s, "}}")
 }
 
+// SecretResolver interface for resolving secret references
+type SecretResolver interface {
+	Resolve(ctx context.Context, value string) (string, error)
+}
+
 // ParseTemplate parses a text template with the predefined FuncMap and returns the resulting string.
-func ParseTemplate(tmpl string) (string, error) {
+// It also resolves secret references if a SecretResolver is provided.
+func ParseTemplate(ctx context.Context, tmpl string, resolver SecretResolver) (string, error) {
+	// First, try to resolve as a secret reference if resolver is provided
+	if resolver != nil && strings.Contains(tmpl, "://") {
+		resolved, err := resolver.Resolve(ctx, tmpl)
+		if err != nil {
+			return "", err
+		}
+		tmpl = resolved
+	}
+
+	// Then, parse as a template if it contains template syntax
 	if !isTemplateString(tmpl) {
 		return tmpl, nil
 	}

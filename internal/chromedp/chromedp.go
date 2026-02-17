@@ -11,6 +11,7 @@ import (
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,9 +21,10 @@ type ChromeDP struct {
 	workingDir      string
 	downloadPath    string
 	downloadChannel chan string
+	secretResolver  utils.SecretResolver
 }
 
-func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads int, debug bool) (cdp *ChromeDP, err error) {
+func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads int, debug bool, secretResolver utils.SecretResolver) (cdp *ChromeDP, err error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
@@ -64,6 +66,7 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 		workingDir:      workingDir,
 		downloadPath:    downloadsDir,
 		downloadChannel: make(chan string),
+		secretResolver:  secretResolver,
 	}
 	defer func() {
 		if err != nil {

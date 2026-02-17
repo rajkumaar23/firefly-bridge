@@ -1,6 +1,13 @@
 firefly:
   host: "https://firefly.example.com"
   token: "test-json-web-token"
+
+# Optional: Configure secret providers for storing sensitive credentials
+# Uncomment and configure to use 1Password for secrets
+# secrets:
+#   onepassword:
+#     token: "your-1password-service-account-token"
+
 institutions:
   - name: "Chase"
     login:
@@ -16,12 +23,18 @@ institutions:
         duration: "2s"
       - type: send_keys
         selector: "#logonbox #userId-text-input-field"
+        # Option 1: Hardcode the value (not recommended for sensitive data)
         value: "username"
+        # Option 2: Use 1Password secret reference (recommended)
+        # value: "op://finance/chase/username"
       - type: sleep
         duration: "2s"
       - type: send_keys
         selector: "#logonbox #password-text-input-field"
+        # Option 1: Hardcode the value (not recommended for sensitive data)
         value: "password"
+        # Option 2: Use 1Password secret reference (recommended)
+        # value: "op://finance/chase/password"
       - type: sleep
         duration: "2s"
       - type: click

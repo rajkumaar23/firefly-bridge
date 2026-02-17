@@ -8,6 +8,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/institution"
+	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,7 @@ type FireflyConfig struct {
 
 type Config struct {
 	Firefly         FireflyConfig             `yaml:"firefly" validate:"required"`
+	Secrets         *secrets.SecretsConfig    `yaml:"secrets,omitempty"`
 	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"file"`
 	Institutions    []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
 }
