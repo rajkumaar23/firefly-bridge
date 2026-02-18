@@ -17,6 +17,7 @@ type StepType string
 const (
 	StepNavigate        StepType = "navigate"
 	StepWait            StepType = "wait_visible"
+	StepwaitNotVisible  StepType = "wait_not_visible"
 	StepClick           StepType = "click"
 	StepSleep           StepType = "sleep"
 	StepReload          StepType = "reload"
@@ -47,6 +48,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &NavigateStep{}
 	case StepWait:
 		step = &WaitStep{}
+	case StepwaitNotVisible:
+		step = &WaitNotVisibleStep{}
 	case StepClick:
 		step = &ClickStep{}
 	case StepSleep:
@@ -111,6 +114,23 @@ func (s WaitStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 		return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.JSPath, chromedp.ByJSPath))
 	}
 	return chromedp.Run(c.Ctx, chromedp.WaitVisible(s.Selector))
+}
+
+// WaitStepNotVisible represents a step to wait until a specific element is not visible on the page.
+type WaitNotVisibleStep struct {
+	Selector string `yaml:"selector" validate:"required_without=JSPath"`
+	JSPath   string `yaml:"js_path" validate:"required_without=Selector"`
+}
+
+func (s WaitNotVisibleStep) Type() StepType {
+	return StepwaitNotVisible
+}
+
+func (s WaitNotVisibleStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	if s.JSPath != "" {
+		return chromedp.Run(c.Ctx, chromedp.WaitNotVisible(s.JSPath, chromedp.ByJSPath))
+	}
+	return chromedp.Run(c.Ctx, chromedp.WaitNotVisible(s.Selector))
 }
 
 // ClickStep represents a step to click on a specific element on the page.
