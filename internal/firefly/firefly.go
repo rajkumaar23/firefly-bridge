@@ -149,6 +149,22 @@ func (h *FireflyHoldings) Equal(other *FireflyHoldings) bool {
 	return true
 }
 
+// GetBalance returns the current balance for the given Firefly account ID.
+func (ff *ClientWithResponses) GetBalance(ctx context.Context, accountID int) (float64, error) {
+	res, err := ff.GetAccountWithResponse(ctx, strconv.Itoa(accountID), &GetAccountParams{})
+	if err != nil {
+		return 0, err
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return 0, fmt.Errorf("unexpected status code: (%s) %s", res.Status(), res.Body)
+	}
+	balance, err := strconv.ParseFloat(*res.ApplicationvndApiJSON200.Data.Attributes.CurrentBalance, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse balance: %w", err)
+	}
+	return balance, nil
+}
+
 // UpdateAccountHoldings updates the holdings (notes field) for a Firefly account
 func (ff *ClientWithResponses) UpdateAccountHoldings(ctx context.Context, accountID int, holdings *FireflyHoldings) error {
 	accountIDStr := strconv.Itoa(accountID)

@@ -28,7 +28,8 @@ func main() {
 	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
 	var statePath = flag.String("state-file", ".firefly-bridge-state.json", "path to the file used to track last successful run per institution")
-	var force = flag.Bool("force", false, "process all institutions regardless of when they were last run")
+	var force = flag.Bool("force-all", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
+	var forceSyncDays = flag.Int("force-txn-sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -72,6 +73,8 @@ func main() {
 		logger.Panicf("failed to load state file: %s", err.Error())
 	}
 
+	syncThreshold := time.Duration(*forceSyncDays) * 24 * time.Hour
+
 	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
 	totalUploadCount := 0
 	defer func() {
@@ -111,8 +114,21 @@ func main() {
 					aLog.Panicf("failed to process investment account: %s", err.Error())
 				}
 			} else {
-				if err := processRegularAccount(ctx, aLog, cdp, ff, &a, &totalUploadCount, fireflyTag); err != nil {
+				// When --force is set, pass a zero lastSync so the balance-unchanged
+				// skip check never triggers inside processRegularAccount.
+				lastSync := runState.LastAccountSync(i.Name, a.Name)
+				if *force {
+					lastSync = time.Time{}
+				}
+				skipped, err := processRegularAccount(ctx, aLog, cdp, ff, &a, &totalUploadCount, fireflyTag, lastSync, syncThreshold)
+				if err != nil {
 					aLog.Panicf("failed to process regular account: %s", err.Error())
+				}
+				if !skipped {
+					runState.RecordAccountSync(i.Name, a.Name)
+					if err := runState.Save(*statePath); err != nil {
+						aLog.Warnf("failed to save state: %s", err.Error())
+					}
 				}
 			}
 		}
@@ -183,17 +199,35 @@ func processInvestmentAccount(ctx context.Context, logger *logrus.Entry, cdp *ch
 	return nil
 }
 
-// processRegularAccount handles regular account synchronization
-func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, account *institution.Account, totalUploadCount *int, fireflyTag string) error {
+// processRegularAccount handles regular account synchronization. It returns
+// (true, nil) when the account is skipped because its balance is unchanged and
+// it was synced recently enough; the caller should not update the account's
+// last-sync timestamp in that case.
+func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, account *institution.Account, totalUploadCount *int, fireflyTag string, lastSync time.Time, syncThreshold time.Duration) (skipped bool, err error) {
 	balance, err := account.GetBalance(cdp)
 	if err != nil {
-		return fmt.Errorf("failed to get balance: %w", err)
+		return false, fmt.Errorf("failed to get balance: %w", err)
 	}
 	logger.Infof("got balance: %.2f", balance)
 
+	// Fetch the current Firefly balance up front so we can decide whether to
+	// skip CSV parsing entirely, and reuse it for the final mismatch check if
+	// no transactions end up being uploaded.
+	fireflyBalance, err := ff.GetBalance(ctx, account.FireflyAccountID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get firefly balance: %w", err)
+	}
+
+	// Skip CSV parsing if the balance is unchanged and the last sync is recent
+	// enough. A zero lastSync (first run or --force) bypasses this check.
+	if math.Abs(balance) == math.Abs(fireflyBalance) && !lastSync.IsZero() && time.Since(lastSync) < syncThreshold {
+		logger.Infof("skipping, balance unchanged (%.2f) and last sync was %s ago", balance, time.Since(lastSync).Round(time.Second))
+		return true, nil
+	}
+
 	txns, err := account.GetTransactions(cdp)
 	if err != nil {
-		return fmt.Errorf("failed to get transactions: %w", err)
+		return false, fmt.Errorf("failed to get transactions: %w", err)
 	}
 	logger.Infof("got %d transactions", len(txns))
 
@@ -201,7 +235,7 @@ func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chrom
 	for _, t := range txns {
 		exists, err := ff.TransactionExists(ctx, t)
 		if err != nil {
-			return fmt.Errorf("failed to check if transaction exists: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
+			return false, fmt.Errorf("failed to check if transaction exists: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
 		}
 		alreadyExistsMsg := ""
 		if !exists {
@@ -214,36 +248,36 @@ func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chrom
 
 	logger.Infof("got %d new transactions", len(filtered))
 
+	uploaded := 0
 	for _, t := range filtered {
 		t.Tags = &[]string{fireflyTag}
 		//TODO: optionally use ollama here to identify category of transaction
 		res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{Transactions: []firefly.TransactionSplitStore{*t}})
 		if err != nil {
-			return fmt.Errorf("failed to store transaction: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
+			return false, fmt.Errorf("failed to store transaction: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
 		}
 		if res.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(res.Body)
-			return fmt.Errorf("unexpected status code: (%s, %s, %s, %s): (%s) %s", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
+			return false, fmt.Errorf("unexpected status code: (%s, %s, %s, %s): (%s) %s", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
 		}
 		logger.Infof("stored transaction: (%s, %s, %s, %s)", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 		*totalUploadCount++
+		uploaded++
 	}
 
-	res, err := ff.GetAccountWithResponse(ctx, strconv.Itoa(account.FireflyAccountID), &firefly.GetAccountParams{})
-	if err != nil {
-		return fmt.Errorf("failed to check updated firefly balance: %w", err)
-	}
-	if res.ApplicationvndApiJSON200 == nil {
-		return fmt.Errorf("unexpected status code: (%s) %s", res.Status(), res.Body)
-	}
-	updatedFireflyBalanceStr := res.ApplicationvndApiJSON200.Data.Attributes.CurrentBalance
-	updatedFireflyBalance, err := strconv.ParseFloat(*updatedFireflyBalanceStr, 64)
-	if err != nil {
-		return fmt.Errorf("failed to parse updated firefly balance: %w", err)
-	}
-	if math.Abs(balance) != math.Abs(updatedFireflyBalance) {
-		logger.Warnf("balance mismatch: firefly: %f, bank: %f", updatedFireflyBalance, balance)
+	// Re-fetch the Firefly balance after uploads to verify it matches the
+	// scraped balance. If nothing was uploaded the balance couldn't have
+	// changed, so reuse the value fetched at the top of this function.
+	if uploaded > 0 {
+		fireflyBalance, err = ff.GetBalance(ctx, account.FireflyAccountID)
+		if err != nil {
+			return false, fmt.Errorf("failed to check updated firefly balance: %w", err)
+		}
 	}
 
-	return nil
+	if math.Abs(balance) != math.Abs(fireflyBalance) {
+		logger.Warnf("balance mismatch: firefly: %f, bank: %f", fireflyBalance, balance)
+	}
+
+	return false, nil
 }
