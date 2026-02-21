@@ -18,6 +18,7 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/institution"
 	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
+	"github.com/rajkumaar23/firefly-bridge/internal/state"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"github.com/sirupsen/logrus"
 )
@@ -26,6 +27,8 @@ func main() {
 	var cdpDebug = flag.Bool("cdp-debug", false, "enable chromedp debug logs")
 	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
+	var statePath = flag.String("state-file", ".firefly-bridge-state.json", "path to the file used to track last successful run per institution")
+	var force = flag.Bool("force", false, "process all institutions regardless of when they were last run")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -64,6 +67,11 @@ func main() {
 	defer cdp.Close()
 	logger.Debug("chromedp setup complete")
 
+	runState, err := state.Load(*statePath)
+	if err != nil {
+		logger.Panicf("failed to load state file: %s", err.Error())
+	}
+
 	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
 	totalUploadCount := 0
 	defer func() {
@@ -82,6 +90,16 @@ func main() {
 
 	for _, i := range cfg.Institutions {
 		iLog := logger.WithField("institution", i.Name)
+
+		if !*force {
+			if lastRun, ok := runState.Institutions[i.Name]; ok {
+				if age := time.Since(lastRun); age < state.SkipWindow {
+					iLog.Infof("skipping, last processed %s ago", age.Round(time.Second))
+					continue
+				}
+			}
+		}
+
 		if err = i.Login(cdp); err != nil {
 			iLog.Panicf("failed to login: %s", err.Error())
 		}
@@ -97,6 +115,11 @@ func main() {
 					aLog.Panicf("failed to process regular account: %s", err.Error())
 				}
 			}
+		}
+
+		runState.Institutions[i.Name] = time.Now()
+		if err := runState.Save(*statePath); err != nil {
+			iLog.Warnf("failed to save state: %s", err.Error())
 		}
 	}
 }
