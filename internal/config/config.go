@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 
 	"github.com/go-playground/validator/v10"
@@ -63,8 +64,17 @@ func NewConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("failed to parse yaml: %w", err)
+	}
+
+	if err := resolveImports(&root, filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("failed to resolve imports: %w", err)
+	}
+
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := root.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
 	}
 
@@ -73,6 +83,42 @@ func NewConfig(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// resolveImports walks the YAML node tree and replaces any scalar node tagged
+// with !import with the parsed contents of the referenced file. Paths are
+// resolved relative to basePath (the directory of the main config file).
+func resolveImports(node *yaml.Node, basePath string) error {
+	switch node.Kind {
+	case yaml.DocumentNode, yaml.MappingNode:
+		for _, child := range node.Content {
+			if err := resolveImports(child, basePath); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for i, child := range node.Content {
+			if child.Kind == yaml.ScalarNode && child.Tag == "!import" {
+				filePath := filepath.Join(basePath, child.Value)
+				data, err := os.ReadFile(filePath)
+				if err != nil {
+					return fmt.Errorf("!import %q: %w", filePath, err)
+				}
+				var fileNode yaml.Node
+				if err := yaml.Unmarshal(data, &fileNode); err != nil {
+					return fmt.Errorf("!import %q: %w", filePath, err)
+				}
+				if fileNode.Kind == yaml.DocumentNode && len(fileNode.Content) > 0 {
+					node.Content[i] = fileNode.Content[0]
+				}
+			} else {
+				if err := resolveImports(child, basePath); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func accountStructLevelValidation(sl validator.StructLevel) {
