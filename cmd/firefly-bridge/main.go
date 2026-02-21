@@ -24,6 +24,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	var cdpDebug = flag.Bool("cdp-debug", false, "enable chromedp debug logs")
 	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
@@ -82,7 +86,6 @@ func main() {
 			logger.Infof("%d transactions uploaded at %s/tags/show/%s", totalUploadCount, strings.TrimSuffix(cfg.Firefly.Host, "/"), strings.ReplaceAll(fireflyTag, " ", "%20"))
 		}
 	}
-	defer logUploadSummary()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -92,6 +95,8 @@ func main() {
 			logger.Panicf("SIGINT received %s", sig.String())
 		}
 	}()
+
+	var errs []error
 
 	for _, i := range cfg.Institutions {
 		iLog := logger.WithField("institution", i.Name)
@@ -106,14 +111,21 @@ func main() {
 		}
 
 		if err = i.Login(cdp); err != nil {
-			iLog.Panicf("failed to login: %s", err.Error())
+			iLog.Errorf("failed to login: %s", err.Error())
+			errs = append(errs, fmt.Errorf("institution %s: failed to login: %w", i.Name, err))
+			continue
 		}
 		iLog.Info("logged in successfully")
+
+		institutionFailed := false
 		for _, a := range i.Accounts {
 			aLog := iLog.WithField("account", a.Name)
 			if a.AccountType == institution.AccountTypeInvestment {
 				if err := processInvestmentAccount(ctx, aLog, cdp, ff, &a); err != nil {
-					aLog.Panicf("failed to process investment account: %s", err.Error())
+					aLog.Errorf("failed to process investment account: %s", err.Error())
+					errs = append(errs, fmt.Errorf("institution %s, account %s: failed to process investment account: %w", i.Name, a.Name, err))
+					institutionFailed = true
+					continue
 				}
 			} else {
 				// When --force is set, pass a zero lastSync so the balance-unchanged
@@ -124,7 +136,10 @@ func main() {
 				}
 				skipped, err := processRegularAccount(ctx, aLog, cdp, ff, &a, &totalUploadCount, fireflyTag, lastSync, syncThreshold)
 				if err != nil {
-					aLog.Panicf("failed to process regular account: %s", err.Error())
+					aLog.Errorf("failed to process regular account: %s", err.Error())
+					errs = append(errs, fmt.Errorf("institution %s, account %s: failed to process regular account: %w", i.Name, a.Name, err))
+					institutionFailed = true
+					continue
 				}
 				if !skipped {
 					runState.RecordAccountSync(i.Name, a.Name)
@@ -135,11 +150,24 @@ func main() {
 			}
 		}
 
-		runState.Institutions[i.Name] = time.Now()
-		if err := runState.Save(*statePath); err != nil {
-			iLog.Warnf("failed to save state: %s", err.Error())
+		if !institutionFailed {
+			runState.Institutions[i.Name] = time.Now()
+			if err := runState.Save(*statePath); err != nil {
+				iLog.Warnf("failed to save state: %s", err.Error())
+			}
 		}
 	}
+
+	logUploadSummary()
+
+	if len(errs) > 0 {
+		logger.Errorf("%d error(s) occurred:", len(errs))
+		for idx, e := range errs {
+			logger.Errorf("  [%d] %s", idx+1, e.Error())
+		}
+		return 1
+	}
+	return 0
 }
 
 // processInvestmentAccount handles investment account synchronization
