@@ -77,16 +77,18 @@ func main() {
 
 	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
 	totalUploadCount := 0
-	defer func() {
+	logUploadSummary := func() {
 		if totalUploadCount > 0 {
 			logger.Infof("%d transactions uploaded at %s/tags/show/%s", totalUploadCount, strings.TrimSuffix(cfg.Firefly.Host, "/"), strings.ReplaceAll(fireflyTag, " ", "%20"))
 		}
-	}()
+	}
+	defer logUploadSummary()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for sig := range c {
+			logUploadSummary()
 			logger.Panicf("SIGINT received %s", sig.String())
 		}
 	}()
