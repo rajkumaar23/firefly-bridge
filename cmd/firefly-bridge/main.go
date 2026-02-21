@@ -43,7 +43,7 @@ func main() {
 	if err != nil {
 		logger.Panicf("failed to load config: %s", err.Error())
 	}
-	logger.Debugf("loaded config")
+	logger.Debug("loaded config")
 
 	secretManager, err := secrets.NewManagerFromConfig(ctx, cfg.Secrets)
 	if err != nil {
@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
-	logger.Debug("verified connection to firefly")
+	logger.Info("verified connection to firefly")
 
 	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug, secretManager)
 	if err != nil {
@@ -68,7 +68,7 @@ func main() {
 	totalUploadCount := 0
 	defer func() {
 		if totalUploadCount > 0 {
-			logrus.Infof("%d transactions uploaded at %s/tags/show/%s", totalUploadCount, strings.TrimSuffix(cfg.Firefly.Host, "/"), strings.ReplaceAll(fireflyTag, " ", "%20"))
+			logger.Infof("%d transactions uploaded at %s/tags/show/%s", totalUploadCount, strings.TrimSuffix(cfg.Firefly.Host, "/"), strings.ReplaceAll(fireflyTag, " ", "%20"))
 		}
 	}()
 
@@ -76,23 +76,25 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for sig := range c {
-			logrus.Panicf("SIGINT received %s", sig.String())
+			logger.Panicf("SIGINT received %s", sig.String())
 		}
 	}()
 
 	for _, i := range cfg.Institutions {
+		iLog := logger.WithField("institution", i.Name)
 		if err = i.Login(cdp); err != nil {
-			logger.Panicf("failed to login to %s: %s", i.Name, err.Error())
+			iLog.Panicf("failed to login: %s", err.Error())
 		}
-		logger.Debugf("logged in to '%s' successfully", i.Name)
+		iLog.Info("logged in successfully")
 		for _, a := range i.Accounts {
+			aLog := iLog.WithField("account", a.Name)
 			if a.AccountType == institution.AccountTypeInvestment {
-				if err := processInvestmentAccount(ctx, logger, cdp, ff, i.Name, &a); err != nil {
-					logger.Panicf("failed to process investment account '%s - %s': %s", i.Name, a.Name, err.Error())
+				if err := processInvestmentAccount(ctx, aLog, cdp, ff, &a); err != nil {
+					aLog.Panicf("failed to process investment account: %s", err.Error())
 				}
 			} else {
-				if err := processRegularAccount(ctx, logger, cdp, ff, i.Name, &a, &totalUploadCount, fireflyTag); err != nil {
-					logger.Panicf("failed to process regular account '%s - %s': %s", i.Name, a.Name, err.Error())
+				if err := processRegularAccount(ctx, aLog, cdp, ff, &a, &totalUploadCount, fireflyTag); err != nil {
+					aLog.Panicf("failed to process regular account: %s", err.Error())
 				}
 			}
 		}
@@ -100,12 +102,12 @@ func main() {
 }
 
 // processInvestmentAccount handles investment account synchronization
-func processInvestmentAccount(ctx context.Context, logger *logrus.Logger, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, institutionName string, account *institution.Account) error {
+func processInvestmentAccount(ctx context.Context, logger *logrus.Entry, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, account *institution.Account) error {
 	holdings, err := account.GetHoldings(cdp)
 	if err != nil {
 		return fmt.Errorf("failed to get holdings: %w", err)
 	}
-	logger.Infof("got %d holdings for '%s - %s'", len(*holdings), institutionName, account.Name)
+	logger.Infof("got %d holdings", len(*holdings))
 
 	for symbol, qty := range *holdings {
 		logger.Debugf("  %s = %.8f", symbol, qty)
@@ -126,11 +128,11 @@ func processInvestmentAccount(ctx context.Context, logger *logrus.Logger, cdp *c
 	}
 
 	if holdings.Equal(currentHoldings) {
-		logger.Infof("holdings unchanged for '%s - %s', skipping update", institutionName, account.Name)
+		logger.Info("holdings unchanged, skipping update")
 		return nil
 	}
 
-	logger.Infof("holdings changed for '%s - %s':", institutionName, account.Name)
+	logger.Info("holdings changed:")
 	for symbol, newQty := range *holdings {
 		oldQty := float64(0)
 		if currentHoldings != nil {
@@ -153,24 +155,24 @@ func processInvestmentAccount(ctx context.Context, logger *logrus.Logger, cdp *c
 	if err := ff.UpdateAccountHoldings(ctx, account.FireflyAccountID, holdings); err != nil {
 		return fmt.Errorf("failed to update holdings: %w", err)
 	}
-	logger.Infof("updated holdings for '%s - %s'", institutionName, account.Name)
+	logger.Info("updated holdings")
 
 	return nil
 }
 
 // processRegularAccount handles regular account synchronization
-func processRegularAccount(ctx context.Context, logger *logrus.Logger, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, institutionName string, account *institution.Account, totalUploadCount *int, fireflyTag string) error {
+func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, account *institution.Account, totalUploadCount *int, fireflyTag string) error {
 	balance, err := account.GetBalance(cdp)
 	if err != nil {
 		return fmt.Errorf("failed to get balance: %w", err)
 	}
-	logger.Debugf("balance for '%s - %s': %.2f", institutionName, account.Name, balance)
+	logger.Infof("got balance: %.2f", balance)
 
 	txns, err := account.GetTransactions(cdp)
 	if err != nil {
 		return fmt.Errorf("failed to get transactions: %w", err)
 	}
-	logger.Debugf("got %d transactions for '%s - %s'", len(txns), institutionName, account.Name)
+	logger.Infof("got %d transactions", len(txns))
 
 	var filtered []*firefly.TransactionSplitStore
 	for _, t := range txns {
@@ -184,10 +186,10 @@ func processRegularAccount(ctx context.Context, logger *logrus.Logger, cdp *chro
 		} else {
 			alreadyExistsMsg = "(already exists)"
 		}
-		logger.Debugf("transaction %s for '%s - %s': (%s, %s, %s, %s)", alreadyExistsMsg, institutionName, account.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+		logger.Debugf("transaction %s: (%s, %s, %s, %s)", alreadyExistsMsg, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 	}
 
-	logger.Debugf("got %d filtered transactions for '%s - %s'", len(filtered), institutionName, account.Name)
+	logger.Infof("got %d new transactions", len(filtered))
 
 	for _, t := range filtered {
 		t.Tags = &[]string{fireflyTag}
@@ -200,7 +202,7 @@ func processRegularAccount(ctx context.Context, logger *logrus.Logger, cdp *chro
 			body, _ := io.ReadAll(res.Body)
 			return fmt.Errorf("unexpected status code: (%s, %s, %s, %s): (%s) %s", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, res.Status, body)
 		}
-		logger.Debugf("stored transaction in firefly for '%s - %s': (%s, %s, %s, %s)", institutionName, account.Name, t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
+		logger.Infof("stored transaction: (%s, %s, %s, %s)", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type)
 		*totalUploadCount++
 	}
 

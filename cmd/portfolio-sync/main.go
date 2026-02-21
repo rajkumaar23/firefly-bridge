@@ -57,7 +57,7 @@ func main() {
 	if err != nil {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
-	logger.Debug("verified connection to firefly")
+	logger.Info("verified connection to firefly")
 
 	accountTypeFilter := firefly.AccountTypeFilterAsset
 	accounts, err := ff.ListAccountWithResponse(ctx, &firefly.ListAccountParams{Type: &accountTypeFilter})
@@ -67,7 +67,7 @@ func main() {
 	if accounts.ApplicationvndApiJSON200 == nil {
 		logger.Panicf("failed to get accounts: %s", accounts.Status())
 	}
-	logger.Debugf("got %d accounts", len(accounts.ApplicationvndApiJSON200.Data))
+	logger.Infof("got %d accounts", len(accounts.ApplicationvndApiJSON200.Data))
 
 	market := market.NewMarket()
 	errors := make([]error, 0)
@@ -77,44 +77,45 @@ func main() {
 	})
 
 	for _, account := range accounts.ApplicationvndApiJSON200.Data {
+		aLog := logger.WithField("account", account.Attributes.Name)
 		notes := account.Attributes.Notes
 		if notes == nil || *notes == "" {
-			logger.Debugf("skipping account %s since it has no notes", account.Attributes.Name)
+			aLog.Debug("skipping, no notes")
 			continue
 		}
 
-		logger.Debugf("found account %s with notes: %s", account.Attributes.Name, *notes)
+		aLog.Debugf("notes: %s", *notes)
 		holdings, err := account.GetHoldings()
 		if err != nil {
-			err = fmt.Errorf("failed to get holdings for account %s: %w", account.Attributes.Name, err)
-			logger.Error(err.Error())
+			err = fmt.Errorf("failed to get holdings: %w", err)
+			aLog.Error(err.Error())
 			errors = append(errors, err)
 			continue
 		}
 		if holdings == nil {
-			err = fmt.Errorf("no holdings found for account %s", account.Attributes.Name)
-			logger.Error(err.Error())
+			err = fmt.Errorf("no holdings found")
+			aLog.Error(err.Error())
 			errors = append(errors, err)
 			continue
 		}
 
 		totalValue, err := holdings.GetTotalValue(market)
 		if err != nil {
-			err = fmt.Errorf("failed to get total value for account %s: %w", account.Attributes.Name, err)
-			logger.Error(err.Error())
+			err = fmt.Errorf("failed to get total value: %w", err)
+			aLog.Error(err.Error())
 			errors = append(errors, err)
 			continue
 		}
 
 		currentBalance, err := strconv.ParseFloat(*account.Attributes.CurrentBalance, 64)
 		if err != nil {
-			err = fmt.Errorf("failed to parse current balance for account %s: %w", account.Attributes.Name, err)
-			logger.Error(err.Error())
+			err = fmt.Errorf("failed to parse current balance: %w", err)
+			aLog.Error(err.Error())
 			errors = append(errors, err)
 			continue
 		}
 
-		logger.Infof("account: %s, real-time value: %.2f, firefly value: %.2f", account.Attributes.Name, totalValue, currentBalance)
+		aLog.Infof("real-time value: %.2f, firefly balance: %.2f", totalValue, currentBalance)
 
 		difference := totalValue - currentBalance
 
@@ -139,19 +140,19 @@ func main() {
 				Transactions: []firefly.TransactionSplitStore{transaction},
 			})
 			if err != nil {
-				err = fmt.Errorf("failed to store transaction for account %s: %w", account.Attributes.Name, err)
-				logger.Error(err.Error())
+				err = fmt.Errorf("failed to store transaction: %w", err)
+				aLog.Error(err.Error())
 				errors = append(errors, err)
 				continue
 			}
 			if res.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(res.Body)
-				err = fmt.Errorf("got unexpected status code when storing transaction for account %s: (%s) %s", account.Attributes.Name, res.Status, body)
-				logger.Error(err.Error())
+				err = fmt.Errorf("unexpected status code storing transaction: (%s) %s", res.Status, body)
+				aLog.Error(err.Error())
 				errors = append(errors, err)
 				continue
 			}
-			logger.Infof("added transaction to account %s for %.2f to sync the balance", account.Attributes.Name, difference)
+			aLog.Infof("stored '%.2f %s' transaction to sync balance", math.Abs(difference), transaction.Description)
 		}
 	}
 }
