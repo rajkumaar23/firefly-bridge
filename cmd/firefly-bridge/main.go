@@ -34,6 +34,7 @@ func run() int {
 	var statePath = flag.String("state-file", ".firefly-bridge-state.json", "path to the file used to track last successful run per institution")
 	var force = flag.Bool("force-all", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
 	var forceSyncDays = flag.Int("force-txn-sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
+	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -101,7 +102,12 @@ func run() int {
 	for _, i := range cfg.Institutions {
 		iLog := logger.WithField("institution", i.Name)
 
-		if !*force {
+		if *onlyInstitution != "" && i.Name != *onlyInstitution {
+			continue
+		}
+
+		forceThis := *force || *onlyInstitution == i.Name
+		if !forceThis {
 			if lastRun, ok := runState.Institutions[i.Name]; ok {
 				if age := time.Since(lastRun); age < state.SkipWindow {
 					iLog.Infof("skipping, last processed %s ago", age.Round(time.Second))
@@ -128,10 +134,10 @@ func run() int {
 					continue
 				}
 			} else {
-				// When --force is set, pass a zero lastSync so the balance-unchanged
+				// When forcing, pass a zero lastSync so the balance-unchanged
 				// skip check never triggers inside processRegularAccount.
 				lastSync := runState.LastAccountSync(i.Name, a.Name)
-				if *force {
+				if forceThis {
 					lastSync = time.Time{}
 				}
 				skipped, err := processRegularAccount(ctx, aLog, cdp, ff, &a, &totalUploadCount, fireflyTag, lastSync, syncThreshold)
