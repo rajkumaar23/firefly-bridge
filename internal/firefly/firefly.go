@@ -192,19 +192,40 @@ func (ff *ClientWithResponses) UpdateAccountHoldings(ctx context.Context, accoun
 	return nil
 }
 
-// HashV2 generates a hash of the transaction using its date, description, amount, type and account ID (source for withdrawals and destination for deposits).
-// This is used to check if a transaction already exists in Firefly before creating it, to avoid duplicates.
-func (t *TransactionSplitStore) HashV2() string {
+// computeHashV2 is the shared implementation of the v2 transaction hash.
+// Format: SHA256(lowercase("{date};{amount};{type};{description};account={accountID}"))
+func computeHashV2(date time.Time, amount string, txType TransactionTypeProperty, description, accountID string) string {
 	h := sha256.New()
+	payload := strings.ToLower(fmt.Sprintf("%s;%s;%s;%s;account=%s", date.Format(time.DateOnly), amount, txType, description, accountID))
+	h.Write([]byte(payload))
+	return fmt.Sprintf("v2:%s", hex.EncodeToString(h.Sum(nil)[:]))
+}
+
+// HashV2 generates a duplicate-detection hash for an existing transaction split
+// read from the Firefly API. Returns an error if the relevant account ID field is nil.
+func (t *TransactionSplit) HashV2() (string, error) {
 	var accountID *string
 	if t.Type == Withdrawal {
 		accountID = t.SourceId
 	} else {
 		accountID = t.DestinationId
 	}
-	payload := strings.ToLower(fmt.Sprintf("%s;%s;%s;%s;account=%s", t.Date.Format(time.DateOnly), t.Amount, t.Type, t.Description, *accountID))
-	h.Write([]byte(payload))
-	return fmt.Sprintf("v2:%s", hex.EncodeToString(h.Sum(nil)[:]))
+	if accountID == nil {
+		return "", fmt.Errorf("account ID is nil for split type %s (description: %q)", t.Type, t.Description)
+	}
+	return computeHashV2(t.Date, t.Amount, t.Type, t.Description, *accountID), nil
+}
+
+// HashV2 generates a duplicate-detection hash for a transaction split being stored.
+// Used before uploading to check whether the transaction already exists in Firefly.
+func (t *TransactionSplitStore) HashV2() string {
+	var accountID *string
+	if t.Type == Withdrawal {
+		accountID = t.SourceId
+	} else {
+		accountID = t.DestinationId
+	}
+	return computeHashV2(t.Date, t.Amount, t.Type, t.Description, *accountID)
 }
 
 // TransactionExists checks if a transaction with the same hash already exists in Firefly.

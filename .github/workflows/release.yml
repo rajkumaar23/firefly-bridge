@@ -35,8 +35,9 @@ jobs:
         run: |
           go build -trimpath -ldflags="-s -w" -o firefly-bridge-linux-${{ matrix.goarch }} ./cmd/firefly-bridge
 
-          # portfolio-sync has no CGO deps.
+          # backfill-hashes and portfolio-sync has no CGO deps.
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-linux-${{ matrix.goarch }} ./cmd/portfolio-sync
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o backfill-hashes-linux-${{ matrix.goarch }} ./cmd/backfill-hashes
 
       - uses: actions/upload-artifact@v4
         with:
@@ -44,6 +45,7 @@ jobs:
           path: |
             firefly-bridge-linux-${{ matrix.goarch }}
             portfolio-sync-linux-${{ matrix.goarch }}
+            backfill-hashes-linux-${{ matrix.goarch }}
 
   release:
     name: Publish GitHub release
@@ -68,7 +70,9 @@ jobs:
             firefly-bridge-linux-amd64 \
             firefly-bridge-linux-arm64 \
             portfolio-sync-linux-amd64 \
-            portfolio-sync-linux-arm64
+            portfolio-sync-linux-arm64 \
+            backfill-hashes-linux-amd64 \
+            backfill-hashes-linux-arm64 \
 
   docker:
     name: Publish Docker image
