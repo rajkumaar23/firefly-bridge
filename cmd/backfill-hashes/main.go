@@ -266,6 +266,11 @@ func updateGroupInternalReferences(ctx context.Context, ff *firefly.ClientWithRe
 		"apply_rules":   false,
 		"fire_webhooks": false,
 	}
+	if gt := txn.Attributes.GroupTitle; gt != nil && *gt != "" {
+		bodyMap["group_title"] = *gt
+	} else if len(splits) > 1 {
+		bodyMap["group_title"] = txn.Attributes.Transactions[0].Description
+	}
 
 	bodyBytes, err := json.Marshal(bodyMap)
 	if err != nil {
