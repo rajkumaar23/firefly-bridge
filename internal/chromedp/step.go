@@ -342,10 +342,10 @@ func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface
 	var transactions []*firefly.TransactionSplitStore
 	var err error
 	if s.Excel != nil {
-		parser := csv.NewParser(c.Ctx, s.Excel.Opts, s.Excel.Config)
+		parser := csv.NewParser(c.Ctx, s.Excel.Opts, s.Excel.Config, c.CSVDebug)
 		transactions, err = parser.ParseFromExcel(fullPath, s.Excel.Worksheet-1)
 	} else if s.CSV != nil {
-		parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config)
+		parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config, c.CSVDebug)
 		transactions, err = parser.Parse(fullPath)
 	} else {
 		return fmt.Errorf("either csv or excel must be configured for get_transactions step")

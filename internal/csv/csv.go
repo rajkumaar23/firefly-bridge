@@ -86,15 +86,16 @@ type Options struct {
 }
 
 type Parser struct {
-	ctx    context.Context
-	logger *logrus.Logger
-	opts   *Options
-	config *FieldConfig
+	ctx      context.Context
+	logger   *logrus.Logger
+	opts     *Options
+	config   *FieldConfig
+	csvDebug bool
 }
 
-func NewParser(ctx context.Context, opts *Options, cfg *FieldConfig) *Parser {
+func NewParser(ctx context.Context, opts *Options, cfg *FieldConfig, csvDebug bool) *Parser {
 	logger := utils.GetLogger(ctx)
-	return &Parser{ctx: ctx, logger: logger, opts: opts, config: cfg}
+	return &Parser{ctx: ctx, logger: logger, opts: opts, config: cfg, csvDebug: csvDebug}
 }
 
 // matchesAnyCondition returns true if the row satisfies at least one of the given conditions.
@@ -160,15 +161,20 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
 
 	reader := csv.NewReader(file)
 	reader.FieldsPerRecord = -1
-	if p.opts.Delimiter != "" {
+	if p.opts != nil && p.opts.Delimiter != "" {
 		reader.Comma = rune(p.opts.Delimiter[0])
 	}
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("error reading csv file: %w", err)
 	}
+	if p.csvDebug {
+		for i, record := range records {
+			p.logger.Debugf("row %d: %v", i+1, record)
+		}
+	}
 
-	if p.opts.SkipHeadRows > len(records) {
+	if p.opts.SkipHeadRows >= len(records) {
 		p.logger.Warnf("no records to process in file: %s", path)
 		return nil, nil
 	}

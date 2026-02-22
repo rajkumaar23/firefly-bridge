@@ -17,6 +17,7 @@ import (
 
 type ChromeDP struct {
 	Ctx             context.Context
+	CSVDebug        bool
 	cancelFuncs     []context.CancelFunc
 	workingDir      string
 	downloadPath    string

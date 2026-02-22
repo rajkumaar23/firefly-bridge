@@ -35,6 +35,7 @@ func run() int {
 	var force = flag.Bool("force-all", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
 	var forceSyncDays = flag.Int("force-txn-sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
 	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")
+	var csvDebug = flag.Bool("csv-debug", false, "log every parsed CSV row with its row number to help diagnose parsing issues")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -67,6 +68,7 @@ func run() int {
 	logger.Info("verified connection to firefly")
 
 	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug, secretManager)
+	cdp.CSVDebug = *csvDebug
 	if err != nil {
 		logger.Panicf("failed to setup chromedp: %s", err.Error())
 	}
