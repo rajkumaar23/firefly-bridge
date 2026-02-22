@@ -47,9 +47,47 @@ jobs:
             portfolio-sync-linux-${{ matrix.goarch }}
             backfill-hashes-linux-${{ matrix.goarch }}
 
+  build-darwin:
+    name: Build macOS binaries
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            goarch: arm64
+          - runner: macos-15-intel
+            goarch: amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -trimpath -ldflags="-s -w" -o firefly-bridge-darwin-${{ matrix.goarch }} ./cmd/firefly-bridge
+
+          # backfill-hashes and portfolio-sync have no CGO deps.
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-darwin-${{ matrix.goarch }} ./cmd/portfolio-sync
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o backfill-hashes-darwin-${{ matrix.goarch }} ./cmd/backfill-hashes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-darwin-${{ matrix.goarch }}
+          path: |
+            firefly-bridge-darwin-${{ matrix.goarch }}
+            portfolio-sync-darwin-${{ matrix.goarch }}
+            backfill-hashes-darwin-${{ matrix.goarch }}
+
   release:
     name: Publish GitHub release
-    needs: build
+    needs: [build, build-darwin]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -69,10 +107,16 @@ jobs:
             --title "$TAG" \
             firefly-bridge-linux-amd64 \
             firefly-bridge-linux-arm64 \
+            firefly-bridge-darwin-amd64 \
+            firefly-bridge-darwin-arm64 \
             portfolio-sync-linux-amd64 \
             portfolio-sync-linux-arm64 \
+            portfolio-sync-darwin-amd64 \
+            portfolio-sync-darwin-arm64 \
             backfill-hashes-linux-amd64 \
             backfill-hashes-linux-arm64 \
+            backfill-hashes-darwin-amd64 \
+            backfill-hashes-darwin-arm64 \
 
   docker:
     name: Publish Docker image
