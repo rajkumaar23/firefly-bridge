@@ -64,7 +64,16 @@ func NewConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	data = []byte(os.ExpandEnv(string(data)))
+	// Use os.Expand instead of os.ExpandEnv so that $$ resolves to a literal $.
+	// os.ExpandEnv has no escape mechanism: $$ hits the isShellSpecialVar branch
+	// and calls os.Getenv("$"), which returns "". By intercepting key == "$" here
+	// we give users a way to include a literal dollar sign in config values.
+	data = []byte(os.Expand(string(data), func(key string) string {
+		if key == "$" {
+			return "$"
+		}
+		return os.Getenv(key)
+	}))
 
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {

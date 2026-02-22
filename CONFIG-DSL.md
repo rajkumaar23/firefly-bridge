@@ -52,13 +52,22 @@ The main config file is YAML. By default, the bridge looks for `config.yaml` in 
 
 ### Environment Variable Expansion
 
-Every value in the config file is run through `os.ExpandEnv` before parsing. You can use `$VAR` or `${VAR}` anywhere:
+Every value in the config file supports `$VAR` and `${VAR}` expansion before parsing:
 
 ```yaml
 firefly:
   host: "${FIREFLY_HOST}"
   token: "${FIREFLY_TOKEN}"
 browser_exec_path: "${BROWSER_PATH}"
+```
+
+To include a literal `$` in a value, write `$$`:
+
+```yaml
+# "$$100.00" → "$100.00"
+- type: send_keys
+  selector: "#amount"
+  value: "$$100.00"
 ```
 
 ### File Imports (`!import`)
