@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -50,6 +51,7 @@ func ParseTemplate(ctx context.Context, tmpl string, resolver SecretResolver) (s
 	funcs := template.FuncMap{
 		"Today":        Today,
 		"SubtractDays": SubtractDays,
+		"Env":          os.Getenv,
 	}
 
 	t, err := template.New("tmpl").Funcs(funcs).Parse(tmpl)

@@ -64,6 +64,8 @@ func NewConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
+	data = []byte(os.ExpandEnv(string(data)))
+
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("failed to parse yaml: %w", err)
