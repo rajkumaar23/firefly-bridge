@@ -1,4 +1,4 @@
 config.yaml
 chromedp-data/
 downloads/
-.firefly-bridge-state.json
+.state.json
