@@ -20,14 +20,23 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install arm64 cross-compiler
+        if: matrix.goarch == 'arm64'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+          # firefly-bridge requires CGO for the 1Password SDK on all architectures.
+          # arm64 uses the system cross-compiler; amd64 uses native gcc.
+          CGO_ENABLED: 1
+          CC: ${{ matrix.goarch == 'arm64' && 'aarch64-linux-gnu-gcc' || 'gcc' }}
         run: |
           go build -trimpath -ldflags="-s -w" -o firefly-bridge-linux-${{ matrix.goarch }} ./cmd/firefly-bridge
-          go build -trimpath -ldflags="-s -w" -o portfolio-sync-linux-${{ matrix.goarch }} ./cmd/portfolio-sync
+
+          # portfolio-sync has no CGO deps.
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-linux-${{ matrix.goarch }} ./cmd/portfolio-sync
 
       - uses: actions/upload-artifact@v4
         with:
@@ -48,15 +57,13 @@ jobs:
         with:
           merge-multiple: true
 
-      - name: Recreate latest release
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest \
-            --title "Latest" \
-            --notes "Built from ${{ github.sha }}" \
+          gh release create ${{ github.sha }} \
+            --title "${{ github.sha }}" \
             --prerelease \
             firefly-bridge-linux-amd64 \
             firefly-bridge-linux-arm64 \
@@ -81,7 +88,7 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
