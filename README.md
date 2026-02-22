@@ -23,6 +23,13 @@ firefly-bridge [flags]
 | `-cdp-debug` | bool | `false` | Enable verbose debug logging for browser automation. Useful for diagnosing selector issues. |
 | `-csv-debug` | bool | `false` | Log every parsed CSV/Excel row with its row number. Useful for diagnosing `skip_head_rows`, `skip_tail_rows`, and column index issues. |
 
+### Runtime directories
+
+Two directories are created automatically alongside the state file at startup:
+
+- `downloads/` — temporary landing zone for CSV/Excel files downloaded during browser automation; files are read and then deleted after each sync.
+- `chromedp-data/` — browser user data directory used by the automation session (cookies, cache, local storage). 
+
 ## Portfolio Sync
 
 `portfolio-sync` is a companion service that fetches current market prices for the securities stored in your Firefly investment account notes and creates Profit/Loss transactions in Firefly III. Unlike `firefly-bridge` (which requires a browser and user interaction to download statements), `portfolio-sync` is fully headless and designed to run on a schedule.

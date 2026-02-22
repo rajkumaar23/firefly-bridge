@@ -1,56 +1,445 @@
+# config.example.yaml — Comprehensive reference showing all DSL options
+#
+# Environment variables can be used anywhere in values: $VAR or ${VAR}
+# Secret references (requires secrets.onepassword): op://vault/item/field
+# Template functions in send_keys / set_value values:
+#   {{ Today "format" }}           — current date
+#   {{ SubtractDays N "format" }}  — date N days in the past
+#   {{ Env "VAR_NAME" }}           — environment variable value
+
+# ── Firefly III connection ────────────────────────────────────────────────────
 firefly:
-  host: "https://firefly.example.com"
-  token: "test-json-web-token"
+  host: "${FIREFLY_HOST}"   # valid HTTP/HTTPS URL; or literal: "https://firefly.example.com"
+  token: "${FIREFLY_TOKEN}" # JWT Personal Access Token from Firefly → Profile → OAuth
 
-# Optional: Configure secret providers for storing sensitive credentials
-# Uncomment and configure to use 1Password for secrets
-# secrets:
-#   onepassword:
-#     token: "your-1password-service-account-token"
+# ── Secret provider (optional) ───────────────────────────────────────────────
+# When configured, any send_keys / set_value `value` may use op://vault/item/field
+# instead of a hardcoded string.
+secrets:
+  onepassword:
+    token: "${OP_SERVICE_ACCOUNT_TOKEN}" # or literal: "ops_your_service_account_token"
 
+# ── Browser executable (required) ────────────────────────────────────────────
+# macOS:
+browser_exec_path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+# Linux: browser_exec_path: "/usr/bin/brave-browser"
+
+# ── Institutions ──────────────────────────────────────────────────────────────
+# Institutions can also be loaded from external files with the !import tag:
+#   institutions:
+#     - !import "institutions/primary-bank.yaml"
+#     - !import "institutions/brokerage.yaml"
+# Or import the whole list: institutions: !import "institutions.yaml"
 institutions:
-  - name: "Chase"
+
+  # ── Institution 1: Regular bank — demonstrates all regular-account features ─
+  - name: "Example Bank"
     login:
+      # navigate: go to the institution's login page
       - type: navigate
-        url: "https://www.chase.com/"
+        url: "https://www.example-bank.example.com/login"
+
+      # wait_visible: pause until element is present (CSS selector variant)
       - type: wait_visible
-        selector: "#logonbox #login-form"
+        selector: "#login-form"
+      # wait_visible: JavaScript path variant (alternative to selector)
+      # - type: wait_visible
+      #   js_path: "document.querySelector('#login-form')"
+
       - type: sleep
-        duration: "2s"
-      - type: click
-        selector: "#logonbox #userId-text"
-      - type: sleep
-        duration: "2s"
+        duration: "2s" # Go duration: "500ms", "2s", "1m30s"
+
+      # send_keys: type into a field (triggers JS input/change events)
+      # Option A — 1Password secret reference (recommended)
       - type: send_keys
-        selector: "#logonbox #userId-text-input-field"
-        # Option 1: Hardcode the value (not recommended for sensitive data)
-        value: "username"
-        # Option 2: Use 1Password secret reference (recommended)
-        # value: "op://finance/chase/username"
-      - type: sleep
-        duration: "2s"
+        selector: "#username-input"
+        value: "op://my-vault/example-bank/username"
+      # Option B — environment variable template
+      # - type: send_keys
+      #   selector: "#username-input"
+      #   value: '{{ Env "BANK_USERNAME" }}'
+      # Option C — hardcoded literal (not recommended for credentials)
+      # - type: send_keys
+      #   selector: "#username-input"
+      #   value: "myusername"
+      # Option D — js_path variant
+      # - type: send_keys
+      #   js_path: "document.querySelector('#username-input')"
+      #   value: "op://my-vault/example-bank/username"
+
       - type: send_keys
-        selector: "#logonbox #password-text-input-field"
-        # Option 1: Hardcode the value (not recommended for sensitive data)
-        value: "password"
-        # Option 2: Use 1Password secret reference (recommended)
-        # value: "op://finance/chase/password"
-      - type: sleep
-        duration: "2s"
+        selector: "#password-input"
+        value: "op://my-vault/example-bank/password"
+
+      # click: click a DOM element (CSS selector variant)
       - type: click
-        selector: "#logonbox #signin-button"
-      - type: sleep
-        duration: "2s"
+        selector: "#signin-btn"
+      # click: JavaScript path variant
+      # - type: click
+      #   js_path: "document.querySelector('#signin-btn')"
+
+      # wait_not_visible: pause until element disappears (e.g., loading overlay)
+      - type: wait_not_visible
+        selector: "#loading-overlay"
+      # wait_not_visible: JavaScript path variant
+      # - type: wait_not_visible
+      #   js_path: "document.querySelector('#loading-overlay')"
+
     accounts:
-      - name: "Sapphire Preferred"
+
+      # ── Credit card: single amount column with negate_if ─────────────────
+      - name: "Example Credit Card"
         firefly_account_id: 1
         account_type: "regular"
+
+        # balance: required for regular accounts; last step must be type "balance"
         balance:
           - type: navigate
-            url: https://secure.chase.com/web/auth/dashboard#/dashboard/overview        
+            url: "https://www.example-bank.example.com/accounts"
           - type: wait_visible
-            selector: "#CARD_ACCOUNTS > div[data-testid='customAccordion-content']"
+            selector: "#card-summary"
           - type: sleep
             duration: "2s"
-          - type: text
-            selector: "#\\31 012345678-currentBalance-dataItem > div[data-testid='dataItem-value']"
+          # balance step — CSS selector variant: uses element's visible text
+          - type: balance
+            selector: "#credit-card-balance"
+          # balance step — JavaScript evaluate variant (alternative to selector):
+          # - type: balance
+          #   evaluate: "document.querySelector('#credit-card-balance').innerText"
+          # Note: numeric IDs need CSS escaping in selectors:
+          # selector: "#\\31 234567-balance"  (for id="1234567-balance")
+
+        # transactions: required for regular accounts; must contain at least one
+        # "transactions" step. Multiple transactions steps are merged.
+        transactions:
+          - type: navigate
+            url: "https://www.example-bank.example.com/accounts/credit-card"
+          - type: wait_visible
+            selector: "#transaction-export"
+          # set_value: sets field value via JS .value property (no key events)
+          # Option A — date template, CSS selector
+          - type: set_value
+            selector: "#start-date"
+            value: '{{ SubtractDays 30 "01/02/2006" }}'
+          # Option B — js_path variant
+          # - type: set_value
+          #   js_path: "document.querySelector('#start-date')"
+          #   value: '{{ SubtractDays 30 "01/02/2006" }}'
+          - type: set_value
+            selector: "#end-date"
+            value: '{{ Today "01/02/2006" }}'
+          - type: click
+            selector: "#download-csv-btn"
+          - type: sleep
+            duration: "5s"
+
+          # transactions step — CSV mode, single amount column
+          - type: transactions
+            csv:
+              options:
+                delimiter: ","       # default; use "\t" for tab-separated
+                skip_head_rows: 1    # skip 1 header row at top
+                skip_tail_rows: 0    # skip N rows at bottom (e.g., totals)
+                # skip_row_conditions: skip rows matching ANY condition
+                skip_row_conditions:
+                  # equals: exact case-sensitive match
+                  - column: 1
+                    operation: "equals"
+                    value: "TOTAL"
+                  # contains: substring match
+                  - column: 2
+                    operation: "contains"
+                    value: "PENDING"
+                  # starts_with: prefix match
+                  - column: 2
+                    operation: "starts_with"
+                    value: "MEMO:"
+                  # ends_with: suffix match
+                  - column: 2
+                    operation: "ends_with"
+                    value: "(REVERSED)"
+                  # empty: cell is blank or whitespace-only (no `value` field)
+                  - column: 1
+                    operation: "empty"
+                  # not_empty: cell has at least one non-whitespace char (no `value`)
+                  # - column: 6
+                  #   operation: "not_empty"
+              fields:
+                # date: required; column is 1-based
+                date:
+                  column: 1
+                  format: "01/02/2006" # MM/DD/YYYY; see Go time format reference
+                  # Other common formats:
+                  # format: "2006-01-02"          # ISO 8601 / YYYY-MM-DD
+                  # format: "1/2/06"              # M/D/YY
+                  # format: "January 2, 2006"     # Full month name
+                  # format: "Jan 2, 2006"         # Abbreviated month
+                # description: required
+                description:
+                  column: 2
+                # category: optional; maps to Firefly category name
+                category:
+                  column: 3
+                # amount: single column containing both positive and negative values
+                amount:
+                  column: 4
+                  negate: false # set true to always multiply by -1
+                  # negate_if: conditionally negate when ANY condition matches
+                  negate_if:
+                    - column: 5
+                      operation: "contains"
+                      value: "CR"
+
+      # ── Checking account: debit/credit split columns, all negate_if ops ───
+      - name: "Example Checking"
+        firefly_account_id: 2
+        account_type: "regular"
+
+        balance:
+          - type: navigate
+            url: "https://www.example-bank.example.com/accounts"
+          - type: wait_visible
+            selector: "#checking-summary"
+          # balance via JavaScript evaluate
+          - type: balance
+            evaluate: "document.querySelector('#checking-balance').innerText"
+
+        transactions:
+          - type: navigate
+            url: "https://www.example-bank.example.com/accounts/checking"
+          - type: wait_visible
+            selector: "#history-section"
+          - type: click
+            selector: "#export-btn"
+          - type: sleep
+            duration: "5s"
+
+          # transactions step — CSV mode, separate debit/credit columns
+          - type: transactions
+            csv:
+              options:
+                delimiter: ","
+                skip_head_rows: 1
+                skip_row_conditions:
+                  - column: 1
+                    operation: "empty"
+              fields:
+                date:
+                  column: 1
+                  format: "2006-01-02"
+                description:
+                  column: 2
+                # debit + credit: mutually exclusive with `amount`; must use both
+                debit:
+                  column: 3
+                  negate: false      # debits are negative by default; true to flip
+                  negate_if:
+                    - column: 5
+                      operation: "equals"
+                      value: "REVERSAL"
+                credit:
+                  column: 4
+                  negate: false      # credits stay positive by default; true to negate
+                  negate_if:
+                    - column: 5
+                      operation: "starts_with"
+                      value: "FEE"
+
+  # ── Institution 2: Credit union — Excel exports, reload step ──────────────
+  - name: "Example Credit Union"
+    login:
+      - type: navigate
+        url: "https://online.example-cu.example.com/login"
+      - type: wait_visible
+        selector: "#login-page"
+      - type: send_keys
+        selector: "#member-id"
+        value: "op://my-vault/example-cu/username"
+      - type: send_keys
+        selector: "#passcode"
+        value: "op://my-vault/example-cu/password"
+      - type: click
+        selector: "#submit-login"
+      - type: wait_not_visible
+        selector: "#login-page"
+      # reload: refresh the current page (equivalent to pressing F5)
+      - type: reload
+      - type: wait_visible
+        selector: "#dashboard"
+
+    accounts:
+
+      # ── Savings: Excel download, tab-delimited option shown in comment ─────
+      - name: "Example Savings"
+        firefly_account_id: 3
+        account_type: "regular"
+
+        balance:
+          - type: navigate
+            url: "https://online.example-cu.example.com/accounts"
+          # wait_visible with js_path
+          - type: wait_visible
+            js_path: "document.querySelector('#savings-widget')"
+          - type: balance
+            selector: "#savings-available-balance"
+
+        transactions:
+          - type: navigate
+            url: "https://online.example-cu.example.com/accounts/savings/history"
+          - type: send_keys
+            selector: "#from-date"
+            value: '{{ SubtractDays 90 "2006-01-02" }}'
+          - type: send_keys
+            selector: "#to-date"
+            value: '{{ Today "2006-01-02" }}'
+          - type: click
+            selector: "#download-excel-btn"
+          - type: sleep
+            duration: "8s"
+
+          # transactions step — Excel mode
+          - type: transactions
+            excel:
+              worksheet: 1        # 1-based sheet index (1 = first sheet)
+              options:
+                skip_head_rows: 2 # skip two header rows
+                skip_tail_rows: 1 # skip one totals row at bottom
+                skip_row_conditions:
+                  - column: 1
+                    operation: "empty"
+              fields:
+                date:
+                  column: 1
+                  format: "2006-01-02"
+                description:
+                  column: 3
+                amount:
+                  column: 5
+                  negate: true # flip sign for all rows in this file
+
+      # ── Money market: tab-separated CSV, second worksheet example ─────────
+      - name: "Example Money Market"
+        firefly_account_id: 4
+        account_type: "regular"
+
+        balance:
+          - type: navigate
+            url: "https://online.example-cu.example.com/accounts"
+          - type: wait_visible
+            selector: "#mm-widget"
+          - type: balance
+            selector: "#mm-balance"
+
+        transactions:
+          - type: navigate
+            url: "https://online.example-cu.example.com/accounts/money-market/export"
+          - type: click
+            selector: "#export-tsv-btn"
+          - type: sleep
+            duration: "5s"
+
+          # tab-delimited CSV; skip_tail_rows to drop a summary row
+          - type: transactions
+            csv:
+              options:
+                delimiter: "\t"
+                skip_head_rows: 1
+                skip_tail_rows: 1
+              fields:
+                date:
+                  column: 1
+                  format: "01/02/2006"
+                description:
+                  column: 2
+                amount:
+                  column: 3
+
+  # ── Institution 3: Investment / brokerage — all market prefixes ───────────
+  - name: "Example Brokerage"
+    login:
+      - type: navigate
+        url: "https://www.example-brokerage.example.com/"
+      - type: wait_visible
+        selector: "#auth-modal"
+      - type: send_keys
+        selector: "#email"
+        value: "op://my-vault/example-brokerage/email"
+      - type: send_keys
+        selector: "#password"
+        value: "op://my-vault/example-brokerage/password"
+      # click using JavaScript path
+      - type: click
+        js_path: "document.querySelector('button[type=\"submit\"]')"
+      # wait_not_visible using JavaScript path
+      - type: wait_not_visible
+        js_path: "document.querySelector('#auth-modal')"
+      - type: sleep
+        duration: "3s"
+
+    accounts:
+
+      # ── Multi-market portfolio: multiple holdings steps (results merged) ───
+      - name: "Example Portfolio"
+        firefly_account_id: 10
+        account_type: "investment"
+
+        # holdings: required for investment accounts; multiple steps are merged
+        holdings:
+          - type: navigate
+            url: "https://www.example-brokerage.example.com/portfolio/positions"
+          - type: wait_visible
+            selector: "#positions-table"
+          - type: sleep
+            duration: "3s"
+
+          # holdings step: JS must return { "symbol": quantity } object.
+          # Market prefix key formats:
+          #   "TICKER"                                    → Yahoo Finance stock
+          #   "mi:fund-slug-us92202e6077"                 → Markets Insider fund
+          #   "mc:MF_XXXXX"                               → MoneyControl mutual fund
+          #   "gold:916"  (22k) / "gold:999" (24k)        → Kitco gold spot × purity
+          #   "cash:USD"  (or any suffix)                 → always priced at 1
+          - type: holdings
+            evaluate: |
+              (() => {
+                const result = {};
+                document.querySelectorAll('.position-row[data-symbol]').forEach(row => {
+                  const symbol = row.dataset.symbol; // already in "PREFIX:value" format
+                  const qty = parseFloat(
+                    row.querySelector('.quantity').innerText.replace(/,/g, '')
+                  );
+                  if (symbol && !isNaN(qty)) result[symbol] = qty;
+                });
+                return result;
+              })()
+
+          # Second holdings step on a different page — results are merged with above
+          - type: navigate
+            url: "https://www.example-brokerage.example.com/portfolio/funds"
+          - type: wait_visible
+            selector: "#fund-holdings"
+          - type: sleep
+            duration: "2s"
+          - type: holdings
+            evaluate: |
+              (() => {
+                return {
+                  // Plain ticker → Yahoo Finance
+                  "AAPL": 50,
+                  "MSFT": 25.5,
+                  // Markets Insider fund (slug from businessinsider.com/funds/<slug>)
+                  "mi:vanguard-target-retirement-2045-fund-us92202e6077": 120,
+                  // MoneyControl mutual fund code
+                  "mc:MF_000123": 45.67,
+                  // 22k gold, quantity in grams (spot bid × 0.916)
+                  "gold:916": 10.5,
+                  // 24k gold, quantity in grams (spot bid × 0.999)
+                  "gold:999": 5.0,
+                  // Cash / money-market / private symbols — always priced at 1
+                  "cash:USD": 5000,
+                  "cash:401K-STABLE-VALUE": 12500
+                };
+              })()
+
+  # ── Institution 4: Loaded from an external file ───────────────────────────
+  - !import "institutions/another-institution.yaml"

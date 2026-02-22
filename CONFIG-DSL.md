@@ -42,7 +42,7 @@ This document is a complete reference for every attribute and feature available 
 - [Template Functions](#template-functions)
 - [Amount Parsing](#amount-parsing)
 - [Validation Rules Summary](#validation-rules-summary)
-- [Full Example](#full-example)
+- [Full Example](#full-example) → [`config.example.yaml`](config.example.yaml)
 
 ---
 
@@ -172,11 +172,10 @@ Absolute path to the Chromium-based browser executable used for web automation. 
 
 Common paths:
 
-| Platform | Chrome Path |
+| Platform | Brave Path |
 |---|---|
-| macOS | `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` |
-| Linux | `/usr/bin/google-chrome` or `/usr/bin/chromium-browser` |
-| Windows | `C:\Program Files\Google\Chrome\Application\chrome.exe` |
+| macOS | `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser` |
+| Linux | `/usr/bin/brave-browser` |
 
 ---
 
@@ -186,7 +185,7 @@ A list of financial institutions. Each institution defines a login flow and one 
 
 ```yaml
 institutions:
-  - name: "First Bank"
+  - name: "Example"
     login:
       - type: navigate
         url: "https://bank.example.com/"
@@ -843,166 +842,4 @@ The config is fully validated on load. Errors are reported with field paths.
 
 ## Full Example
 
-```yaml
-# config.yaml
-
-firefly:
-  host: "https://firefly.example.com"
-  token: "${FIREFLY_TOKEN}"
-
-secrets:
-  onepassword:
-    token: "ops_your_service_account_token"
-
-browser_exec_path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-
-institutions:
-
-  # ── Regular bank/credit card institution ───────────────────────────────────
-  - name: "First Bank"
-    login:
-      - type: navigate
-        url: "https://www.firstbank.example.com/"
-      - type: wait_visible
-        selector: "#login-form"
-      - type: sleep
-        duration: "2s"
-      - type: send_keys
-        selector: "#username-input"
-        value: "op://vault/first-bank/username"
-      - type: send_keys
-        selector: "#password-input"
-        value: "op://vault/first-bank/password"
-      - type: click
-        selector: "#signin-btn"
-      - type: wait_not_visible
-        selector: "#login-form"
-
-    accounts:
-      # Credit card — single amount column
-      - name: "Credit Card"
-        firefly_account_id: 1
-        account_type: "regular"
-
-        balance:
-          - type: navigate
-            url: "https://www.firstbank.example.com/dashboard"
-          - type: wait_visible
-            selector: "#card-accounts"
-          - type: sleep
-            duration: "2s"
-          - type: balance
-            selector: "#balance-value"
-
-        transactions:
-          - type: click
-            selector: "#download-csv-btn"
-          - type: sleep
-            duration: "5s"
-          - type: transactions
-            csv:
-              options:
-                delimiter: ","
-                skip_head_rows: 1
-              fields:
-                date:
-                  column: 1
-                  format: "01/02/2006"
-                description:
-                  column: 2
-                category:
-                  column: 3
-                amount:
-                  column: 4
-
-      # Checking account — debit/credit split columns, skip empty rows
-      - name: "Checking"
-        firefly_account_id: 2
-        account_type: "regular"
-
-        balance:
-          - type: navigate
-            url: "https://www.firstbank.example.com/dashboard"
-          - type: wait_visible
-            selector: "#deposit-accounts"
-          - type: balance
-            evaluate: "document.querySelector('#balance').innerText"
-
-        transactions:
-          - type: navigate
-            url: "https://www.firstbank.example.com/dashboard"
-          - type: click
-            selector: "#download-btn"
-          - type: set_value
-            selector: "#start-date"
-            value: '{{ SubtractDays 30 "01/02/2006" }}'
-          - type: set_value
-            selector: "#end-date"
-            value: '{{ Today "01/02/2006" }}'
-          - type: click
-            selector: "#export-btn"
-          - type: sleep
-            duration: "5s"
-          - type: transactions
-            csv:
-              options:
-                skip_head_rows: 1
-                skip_row_conditions:
-                  - column: 1
-                    operation: "empty"
-              fields:
-                date:
-                  column: 1
-                  format: "01/02/2006"
-                description:
-                  column: 2
-                debit:
-                  column: 3
-                credit:
-                  column: 4
-
-  # ── Investment/brokerage institution ───────────────────────────────────────
-  - name: "Apex Brokerage"
-    login:
-      - type: navigate
-        url: "https://www.apexbrokerage.example.com/"
-      - type: wait_visible
-        selector: "#username-input"
-      - type: send_keys
-        selector: "#username-input"
-        value: "op://vault/apex-brokerage/username"
-      - type: send_keys
-        selector: "#password-input"
-        value: "op://vault/apex-brokerage/password"
-      - type: click
-        selector: "#login-btn"
-      - type: wait_not_visible
-        selector: "#login-btn"
-
-    accounts:
-      - name: "Brokerage Account"
-        firefly_account_id: 10
-        account_type: "investment"
-
-        holdings:
-          - type: navigate
-            url: "https://www.apexbrokerage.example.com/portfolio/positions"
-          - type: wait_visible
-            selector: "#positions-table"
-          - type: sleep
-            duration: "3s"
-          - type: holdings
-            evaluate: |
-              (() => {
-                const result = {};
-                document.querySelectorAll('.position-row').forEach(row => {
-                  const symbol = row.querySelector('.symbol').innerText.trim();
-                  const qty = parseFloat(row.querySelector('.quantity').innerText.replace(/,/g, ''));
-                  if (symbol && !isNaN(qty)) result[symbol] = qty;
-                });
-                return result;
-              })()
-
-  # ── Institution loaded from an external file ───────────────────────────────
-  - !import "institutions/another-bank.yaml"
-```
+See [`config.example.yaml`](config.example.yaml) for a complete, annotated example covering every step type, account type, field option, and market prefix.
