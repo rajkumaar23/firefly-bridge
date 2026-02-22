@@ -62,9 +62,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create ${{ github.sha }} \
-            --title "${{ github.sha }}" \
-            --prerelease \
+          TAG="sha-${GITHUB_SHA::7}"
+          gh release create "$TAG" \
+            --title "$TAG" \
             firefly-bridge-linux-amd64 \
             firefly-bridge-linux-arm64 \
             portfolio-sync-linux-amd64 \
