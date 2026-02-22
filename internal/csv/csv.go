@@ -29,9 +29,6 @@ type FieldConfig struct {
 	Category struct {
 		Column int `yaml:"column" validate:"omitempty,gt=0"`
 	} `yaml:"category"`
-	Notes struct {
-		Column int `yaml:"column" validate:"omitempty,gt=0"`
-	} `yaml:"notes"`
 	Amount struct {
 		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
 		Negate   bool           `yaml:"negate"`
@@ -211,17 +208,11 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error parsing category for file '%s' (row=%d): %w", path, idx+1, err)
 		}
-		notes, err := p.getNotes(record)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing notes for file '%s' (row=%d): %w", path, idx+1, err)
-		}
-
 		transaction := &firefly.TransactionSplitStore{
 			Date:         date,
 			Amount:       strconv.FormatFloat(math.Abs(amount), 'f', 2, 64),
 			Description:  description,
 			CategoryName: &category,
-			Notes:        &notes,
 		}
 
 		if amount < 0 {
@@ -341,16 +332,6 @@ func (p *Parser) getCategory(record []string) (string, error) {
 		return "", fmt.Errorf("category column index out of bounds")
 	}
 	return strings.TrimSpace(record[p.config.Category.Column-1]), nil
-}
-
-func (p *Parser) getNotes(record []string) (string, error) {
-	if p.config.Notes.Column == 0 {
-		return "", nil
-	}
-	if p.config.Notes.Column <= 0 || p.config.Notes.Column > len(record) {
-		return "", fmt.Errorf("notes column index out of bounds")
-	}
-	return strings.TrimSpace(record[p.config.Notes.Column-1]), nil
 }
 
 // Helpers to convert XLS(X) files to CSV
