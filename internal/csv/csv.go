@@ -35,17 +35,17 @@ type FieldConfig struct {
 	Amount struct {
 		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
 		Negate   bool           `yaml:"negate"`
-		NegateIf []RowCondition `yaml:"negate_if" validate:"omitempty,dive"`
+		NegateIf []MatchCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"amount"`
 	Debit struct {
 		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
 		Negate   bool           `yaml:"negate"`
-		NegateIf []RowCondition `yaml:"negate_if" validate:"omitempty,dive"`
+		NegateIf []MatchCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"debit"`
 	Credit struct {
 		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
 		Negate   bool           `yaml:"negate"`
-		NegateIf []RowCondition `yaml:"negate_if" validate:"omitempty,dive"`
+		NegateIf []MatchCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"credit"`
 }
 
@@ -71,7 +71,7 @@ func (f *FieldConfig) Validate() error {
 	return nil
 }
 
-type RowCondition struct {
+type MatchCondition struct {
 	Column    int    `yaml:"column" validate:"required"`
 	Operation string `yaml:"operation" validate:"oneof=equals contains starts_with ends_with empty not_empty"`
 	Value     string `yaml:"value" validate:"required_if=Operation equals,required_if=Operation contains,required_if=Operation starts_with,required_if=Operation ends_with"`
@@ -82,7 +82,7 @@ type Options struct {
 	Delimiter         string         `yaml:"delimiter"`
 	SkipHeadRows      int            `yaml:"skip_head_rows"`
 	SkipTailRows      int            `yaml:"skip_tail_rows"`
-	SkipRowConditions []RowCondition `yaml:"skip_row_conditions" validate:"dive"`
+	SkipRowConditions []MatchCondition `yaml:"skip_row_conditions" validate:"dive"`
 }
 
 type Parser struct {
@@ -99,7 +99,7 @@ func NewParser(ctx context.Context, opts *Options, cfg *FieldConfig, csvDebug bo
 }
 
 // matchesAnyCondition returns true if the row satisfies at least one of the given conditions.
-func matchesAnyCondition(conditions []RowCondition, row []string) bool {
+func matchesAnyCondition(conditions []MatchCondition, row []string) bool {
 	for _, cond := range conditions {
 		if cond.Column > len(row) || cond.Column <= 0 {
 			continue
