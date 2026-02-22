@@ -315,10 +315,16 @@ func parseHoldingsFromJS(jsResult interface{}) (*firefly.FireflyHoldings, error)
 
 type (
 	GetTransactionsStep struct {
-		CSV struct {
+		CSV *struct {
 			Opts   *csv.Options     `yaml:"options"`
 			Config *csv.FieldConfig `yaml:"fields" validate:"required,validateFn"`
-		} `yaml:"csv" validate:"required"`
+		} `yaml:"csv" validate:"required_without=Excel,excluded_with=Excel"`
+		Excel *struct {
+			// Worksheet is the 1-based index of the worksheet to parse.
+			Worksheet int              `yaml:"worksheet" validate:"required"`
+			Opts      *csv.Options     `yaml:"options"`
+			Config    *csv.FieldConfig `yaml:"fields" validate:"required,validateFn"`
+		} `yaml:"excel" validate:"required_without=CSV,excluded_with=CSV"`
 	}
 )
 
@@ -331,8 +337,19 @@ func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface
 	logger := utils.GetLogger(c.Ctx)
 	logger.Debugf("received download event for file: %s", fileName)
 
-	parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config)
-	transactions, err := parser.Parse(filepath.Join(c.downloadPath, fileName))
+	fullPath := filepath.Join(c.downloadPath, fileName)
+
+	var transactions []*firefly.TransactionSplitStore
+	var err error
+	if s.Excel != nil {
+		parser := csv.NewParser(c.Ctx, s.Excel.Opts, s.Excel.Config)
+		transactions, err = parser.ParseFromExcel(fullPath, s.Excel.Worksheet-1)
+	} else if s.CSV != nil {
+		parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config)
+		transactions, err = parser.Parse(fullPath)
+	} else {
+		return fmt.Errorf("either csv or excel must be configured for get_transactions step")
+	}
 	if err != nil {
 		return fmt.Errorf("error parsing transactions: %w", err)
 	}
