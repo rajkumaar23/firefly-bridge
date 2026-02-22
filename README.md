@@ -22,3 +22,44 @@ firefly-bridge [flags]
 | `-debug` | bool | `false` | Enable verbose debug logging for firefly-bridge internals. |
 | `-cdp-debug` | bool | `false` | Enable verbose debug logging for browser automation. Useful for diagnosing selector issues. |
 | `-csv-debug` | bool | `false` | Log every parsed CSV/Excel row with its row number. Useful for diagnosing `skip_head_rows`, `skip_tail_rows`, and column index issues. |
+
+## Portfolio Sync
+
+`portfolio-sync` is a companion service that fetches current market prices for the securities stored in your Firefly investment account notes and creates Profit/Loss transactions in Firefly III. Unlike `firefly-bridge` (which requires a browser and user interaction to download statements), `portfolio-sync` is fully headless and designed to run on a schedule.
+
+### Running as a cron job with Docker Compose
+
+The recommended way to run `portfolio-sync` continuously is alongside [Ofelia](https://github.com/mcuadros/ofelia), a Docker-native job scheduler. The container sleeps indefinitely and Ofelia exec's the binary on your schedule — no separate cron daemon or host access required.
+
+```yaml
+services:
+  portfolio-sync:
+    image: ghcr.io/rajkumaar23/firefly-portfolio-sync:latest
+    env_file:
+      - stack.env
+    entrypoint: ["/bin/sh", "-c", "sleep infinity"]
+    restart: unless-stopped
+    environment:
+      - FIREFLY_HOST=${FIREFLY_HOST}
+      - FIREFLY_TOKEN=${FIREFLY_TOKEN}
+      - TZ=America/Los_Angeles
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.portfolio-sync.schedule: "0 20 13 * * *"
+      ofelia.job-exec.portfolio-sync.command: "/usr/local/bin/portfolio-sync"
+
+  ofelia:
+    image: mcuadros/ofelia:latest
+    restart: unless-stopped
+    command: daemon --docker
+    environment:
+      - TZ=America/Los_Angeles
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - portfolio-sync
+```
+
+The schedule uses a 6-field cron expression (seconds first): `0 20 13 * * *` runs daily at 13:20. Adjust to match your preferred sync time and timezone.
+
+---

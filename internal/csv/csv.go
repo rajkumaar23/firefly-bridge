@@ -30,18 +30,18 @@ type FieldConfig struct {
 		Column int `yaml:"column" validate:"omitempty,gt=0"`
 	} `yaml:"category"`
 	Amount struct {
-		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
-		Negate   bool           `yaml:"negate"`
+		Column   int              `yaml:"column" validate:"omitempty,gt=0"`
+		Negate   bool             `yaml:"negate"`
 		NegateIf []MatchCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"amount"`
 	Debit struct {
-		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
-		Negate   bool           `yaml:"negate"`
+		Column   int              `yaml:"column" validate:"omitempty,gt=0"`
+		Negate   bool             `yaml:"negate"`
 		NegateIf []MatchCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"debit"`
 	Credit struct {
-		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
-		Negate   bool           `yaml:"negate"`
+		Column   int              `yaml:"column" validate:"omitempty,gt=0"`
+		Negate   bool             `yaml:"negate"`
 		NegateIf []MatchCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"credit"`
 }
@@ -76,9 +76,9 @@ type MatchCondition struct {
 
 // Options defines additional settings for parsing CSV files
 type Options struct {
-	Delimiter         string         `yaml:"delimiter"`
-	SkipHeadRows      int            `yaml:"skip_head_rows"`
-	SkipTailRows      int            `yaml:"skip_tail_rows"`
+	Delimiter         string           `yaml:"delimiter"`
+	SkipHeadRows      int              `yaml:"skip_head_rows"`
+	SkipTailRows      int              `yaml:"skip_tail_rows"`
 	SkipRowConditions []MatchCondition `yaml:"skip_row_conditions" validate:"dive"`
 }
 
