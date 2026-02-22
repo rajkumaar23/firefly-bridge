@@ -337,6 +337,10 @@ func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface
 		return fmt.Errorf("error parsing transactions: %w", err)
 	}
 
-	results[s.Type()] = transactions
+	if existing, ok := results[s.Type()].([]*firefly.TransactionSplitStore); ok {
+		results[s.Type()] = append(existing, transactions...)
+	} else {
+		results[s.Type()] = transactions
+	}
 	return nil
 }
