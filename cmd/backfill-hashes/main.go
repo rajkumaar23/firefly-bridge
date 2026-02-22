@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
@@ -24,6 +25,7 @@ func main() {
 	var debug = flag.Bool("debug", false, "enable debug logs")
 	var host = flag.String("host", "", "firefly host (eg: http://firefly.lan.example.com), alternative to $FIREFLY_HOST")
 	var token = flag.String("token", "", "firefly access token, alternative to $FIREFLY_TOKEN")
+	var concurrency = flag.Int("concurrency", 5, "max concurrent update requests per account")
 	flag.Parse()
 
 	logger := logrus.New()
@@ -140,18 +142,36 @@ func main() {
 
 		updated := 0
 		splitsUpdated := 0
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, *concurrency)
+
 		for _, g := range toUpdate {
-			if updatedIDs[g.txn.Id] {
+			mu.Lock()
+			alreadyDone := updatedIDs[g.txn.Id]
+			mu.Unlock()
+			if alreadyDone {
 				continue
 			}
-			if err := updateGroupInternalReferences(ctx, ff, g.txn, aLog, *host); err != nil {
-				aLog.Errorf("failed to update transaction group %s: %s", g.txn.Id, err)
-				continue
-			}
-			updatedIDs[g.txn.Id] = true
-			updated++
-			splitsUpdated += g.splitCount
+
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(g groupToUpdate) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				if err := updateGroupInternalReferences(ctx, ff, g.txn, aLog, *host); err != nil {
+					aLog.Errorf("failed to update transaction group %s: %s", g.txn.Id, err)
+					return
+				}
+				mu.Lock()
+				updatedIDs[g.txn.Id] = true
+				updated++
+				splitsUpdated += g.splitCount
+				mu.Unlock()
+			}(g)
 		}
+		wg.Wait()
 
 		aLog.Infof("updated %d group(s), %d split(s)", updated, splitsUpdated)
 		totalAccountsUpdated++
