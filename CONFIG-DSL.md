@@ -52,23 +52,18 @@ The main config file is YAML. By default, the bridge looks for `config.yaml` in 
 
 ### Environment Variable Expansion
 
-Every value in the config file supports `$VAR` and `${VAR}` expansion before parsing:
+Use `${ENV:KEY}` anywhere in the config to substitute an environment variable:
 
 ```yaml
 firefly:
-  host: "${FIREFLY_HOST}"
-  token: "${FIREFLY_TOKEN}"
-browser_exec_path: "${BROWSER_PATH}"
+  host: "${ENV:FIREFLY_HOST}"
+  token: "${ENV:FIREFLY_TOKEN}"
+browser_exec_path: "${ENV:BROWSER_PATH}"
 ```
 
-To include a literal `$` in a value, write `$$`:
-
-```yaml
-# "$$100.00" → "$100.00"
-- type: send_keys
-  selector: "#amount"
-  value: "$$100.00"
-```
+The `ENV:` prefix makes the syntax unambiguous — it never conflicts with JavaScript
+template literals (`${expr}`), CSS selectors, or any other context where `$` has
+meaning. Plain `$` and `${...}` without the prefix are left untouched.
 
 ### File Imports (`!import`)
 
@@ -744,27 +739,6 @@ Returns the date N days in the past, formatted as a string.
 value: '{{ SubtractDays 30 "2006-01-02" }}'   # → "2026-01-22" (30 days ago)
 value: '{{ SubtractDays 90 "01/02/2006" }}'   # → "11/23/2025" (90 days ago)
 ```
-
-### `Env`
-
-Returns the value of an environment variable.
-
-```
-{{ Env "VAR_NAME" }}
-```
-
-| Argument | Type | Description |
-|---|---|---|
-| `VAR_NAME` | string | Name of the environment variable |
-
-**Example:**
-```yaml
-value: '{{ Env "BANK_USERNAME" }}'
-```
-
-Returns an empty string if the variable is not set.
-
----
 
 ### Go Time Format Reference
 

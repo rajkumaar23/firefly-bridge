@@ -1,23 +1,22 @@
 # config.example.yaml — Comprehensive reference showing all DSL options
 #
-# Environment variables can be used anywhere in values: $VAR or ${VAR}
+# Environment variables can be referenced anywhere in values: ${ENV:VAR_NAME}
 # Secret references (requires secrets.onepassword): op://vault/item/field
 # Template functions in send_keys / set_value values:
 #   {{ Today "format" }}           — current date
 #   {{ SubtractDays N "format" }}  — date N days in the past
-#   {{ Env "VAR_NAME" }}           — environment variable value
 
 # ── Firefly III connection ────────────────────────────────────────────────────
 firefly:
-  host: "${FIREFLY_HOST}"   # valid HTTP/HTTPS URL; or literal: "https://firefly.example.com"
-  token: "${FIREFLY_TOKEN}" # JWT Personal Access Token from Firefly → Profile → OAuth
+  host: "${ENV:FIREFLY_HOST}"   # valid HTTP/HTTPS URL; or literal: "https://firefly.example.com"
+  token: "${ENV:FIREFLY_TOKEN}" # JWT Personal Access Token from Firefly → Profile → OAuth
 
 # ── Secret provider (optional) ───────────────────────────────────────────────
 # When configured, any send_keys / set_value `value` may use op://vault/item/field
 # instead of a hardcoded string.
 secrets:
   onepassword:
-    token: "${OP_SERVICE_ACCOUNT_TOKEN}" # or literal: "ops_your_service_account_token"
+    token: "${ENV:OP_SERVICE_ACCOUNT_TOKEN}" # or literal: "ops_your_service_account_token"
 
 # ── Browser executable (required) ────────────────────────────────────────────
 # macOS:
@@ -54,15 +53,11 @@ institutions:
       - type: send_keys
         selector: "#username-input"
         value: "op://my-vault/example-bank/username"
-      # Option B — environment variable template
-      # - type: send_keys
-      #   selector: "#username-input"
-      #   value: '{{ Env "BANK_USERNAME" }}'
-      # Option C — hardcoded literal (not recommended for credentials)
+      # Option B — hardcoded literal (not recommended for credentials)
       # - type: send_keys
       #   selector: "#username-input"
       #   value: "myusername"
-      # Option D — js_path variant
+      # Option C — js_path variant
       # - type: send_keys
       #   js_path: "document.querySelector('#username-input')"
       #   value: "op://my-vault/example-bank/username"

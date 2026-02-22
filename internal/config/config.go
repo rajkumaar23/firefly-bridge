@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
@@ -12,6 +13,12 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"gopkg.in/yaml.v3"
 )
+
+// envVarPattern matches the explicit ${ENV:KEY} expansion syntax.
+// Using a namespaced prefix avoids any collision with JavaScript template
+// literals (${expr}), shell-style $VAR references in JS, or any other
+// context where "$" has meaning — no denylist or post-parse walk needed.
+var envVarPattern = regexp.MustCompile(`\$\{ENV:([^}]*)\}`)
 
 type FireflyConfig struct {
 	Host  string `yaml:"host" validate:"http_url"`
@@ -64,15 +71,8 @@ func NewConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Use os.Expand instead of os.ExpandEnv so that $$ resolves to a literal $.
-	// os.ExpandEnv has no escape mechanism: $$ hits the isShellSpecialVar branch
-	// and calls os.Getenv("$"), which returns "". By intercepting key == "$" here
-	// we give users a way to include a literal dollar sign in config values.
-	data = []byte(os.Expand(string(data), func(key string) string {
-		if key == "$" {
-			return "$"
-		}
-		return os.Getenv(key)
+	data = []byte(envVarPattern.ReplaceAllStringFunc(string(data), func(match string) string {
+		return os.Getenv(match[6 : len(match)-1]) // strip "${ENV:" and "}"
 	}))
 
 	var root yaml.Node
