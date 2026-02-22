@@ -31,7 +31,7 @@ func run() int {
 	var cdpDebug = flag.Bool("cdp-debug", false, "enable chromedp debug logs")
 	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
-	var statePath = flag.String("state-file", ".firefly-bridge-state.json", "path to the file used to track last successful run per institution")
+	var statePath = flag.String("state", ".state.json", "path to the file used to track last successful run per institution")
 	var force = flag.Bool("force", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
 	var forceSyncDays = flag.Int("sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
 	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")

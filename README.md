@@ -6,6 +6,8 @@ Firefly Bridge fetches transactions and balances directly from financial institu
 
 All institution-specific logic — login flows, CSS selectors, CSV column mappings, and secret references — is defined in a `config.yaml` file, keeping sensitive details private and configuration explicit. See [CONFIG-DSL.md](CONFIG-DSL.md) for a complete reference of every available option.
 
+---
+
 > [!CAUTION]
 > **Back up your Firefly III database before running any tool in this project.**
 >
@@ -56,7 +58,9 @@ Update? (y/n):
 
 Answer `y` to apply the hashes for that account or `n` to skip it. The tool tracks which transaction groups have already been updated, so a single group that appears in multiple accounts' transaction lists (e.g. a transfer) is only updated once.
 
-## CLI Flags
+---
+
+## Firefly Bridge
 
 ```
 firefly-bridge [flags]
@@ -64,8 +68,8 @@ firefly-bridge [flags]
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `-config` | string | `"config.yaml"` | Path to the YAML configuration file. |
-| `-state-file` | string | `".firefly-bridge-state.json"` | Path to the state file that tracks the last successful run per institution and account. |
+| `-config` | string | `"config.yaml"` | Path to the YAML configuration file. See [CONFIG-DSL.md](CONFIG-DSL.md). |
+| `-state` | string | `".state.json"` | Path to the state file that tracks the last successful run per institution and account. |
 | `-institution` | string | `""` | Run only the institution with this exact name (case-sensitive). Skips all other institutions and also bypasses cooldown and balance-unchanged checks for the specified institution. |
 | `-force` | bool | `false` | Bypass the per-institution cooldown and the per-account balance-unchanged skip. Forces a full sync of every institution and account regardless of state. |
 | `-sync-days` | int | `10` | Force a full transaction sync for an account after this many days have elapsed since the last sync, even if the scraped balance matches the Firefly balance. |
@@ -79,6 +83,8 @@ Two directories are created automatically alongside the state file at startup:
 
 - `downloads/` — temporary landing zone for CSV/Excel files downloaded during browser automation; files are read and then deleted after each sync.
 - `chromedp-data/` — browser user data directory used by the automation session (cookies, cache, local storage). 
+
+---
 
 ## Portfolio Sync
 
@@ -118,5 +124,3 @@ services:
 ```
 
 The schedule uses a 6-field cron expression (seconds first): `0 20 13 * * *` runs daily at 13:20. Adjust to match your preferred sync time and timezone.
-
----
