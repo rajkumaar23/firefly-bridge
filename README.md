@@ -124,3 +124,9 @@ services:
 ```
 
 The schedule uses a 6-field cron expression (seconds first): `0 20 13 * * *` runs daily at 13:20. Adjust to match your preferred sync time and timezone.
+
+---
+
+## License
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
