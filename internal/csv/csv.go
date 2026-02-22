@@ -33,16 +33,19 @@ type FieldConfig struct {
 		Column int `yaml:"column" validate:"omitempty,gt=0"`
 	} `yaml:"notes"`
 	Amount struct {
-		Column int  `yaml:"column" validate:"omitempty,gt=0"`
-		Negate bool `yaml:"negate"`
+		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
+		Negate   bool           `yaml:"negate"`
+		NegateIf []RowCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"amount"`
 	Debit struct {
-		Column int  `yaml:"column" validate:"omitempty,gt=0"`
-		Negate bool `yaml:"negate"`
+		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
+		Negate   bool           `yaml:"negate"`
+		NegateIf []RowCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"debit"`
 	Credit struct {
-		Column int  `yaml:"column" validate:"omitempty,gt=0"`
-		Negate bool `yaml:"negate"`
+		Column   int            `yaml:"column" validate:"omitempty,gt=0"`
+		Negate   bool           `yaml:"negate"`
+		NegateIf []RowCondition `yaml:"negate_if" validate:"omitempty,dive"`
 	} `yaml:"credit"`
 }
 
@@ -94,10 +97,9 @@ func NewParser(ctx context.Context, opts *Options, cfg *FieldConfig) *Parser {
 	return &Parser{ctx: ctx, logger: logger, opts: opts, config: cfg}
 }
 
-// ShouldSkipRow returns true if the row matches any skip condition based on
-// column index, value, and operation ("equals", "contains", "starts_with", "ends_with", "empty", "not_empty").
-func (o *Options) ShouldSkipRow(row []string) bool {
-	for _, cond := range o.SkipRowConditions {
+// matchesAnyCondition returns true if the row satisfies at least one of the given conditions.
+func matchesAnyCondition(conditions []RowCondition, row []string) bool {
+	for _, cond := range conditions {
 		if cond.Column > len(row) || cond.Column <= 0 {
 			continue
 		}
@@ -132,6 +134,12 @@ func (o *Options) ShouldSkipRow(row []string) bool {
 		}
 	}
 	return false
+}
+
+// ShouldSkipRow returns true if the row matches any skip condition based on
+// column index, value, and operation ("equals", "contains", "starts_with", "ends_with", "empty", "not_empty").
+func (o *Options) ShouldSkipRow(row []string) bool {
+	return matchesAnyCondition(o.SkipRowConditions, row)
 }
 
 func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
@@ -272,6 +280,9 @@ func (p *Parser) getAmount(record []string) (amount float64, err error) {
 		if p.config.Amount.Negate {
 			amount = -1 * amount
 		}
+		if matchesAnyCondition(p.config.Amount.NegateIf, record) {
+			amount = -1 * amount
+		}
 
 		return amount, nil
 	}
@@ -291,6 +302,9 @@ func (p *Parser) getAmount(record []string) (amount float64, err error) {
 		if !p.config.Debit.Negate {
 			amount = -1 * amount
 		}
+		if matchesAnyCondition(p.config.Debit.NegateIf, record) {
+			amount = -1 * amount
+		}
 		return amount, nil
 	}
 
@@ -304,6 +318,9 @@ func (p *Parser) getAmount(record []string) (amount float64, err error) {
 		return 0.0, fmt.Errorf("error parsing credit amount: %w", err)
 	}
 	if p.config.Credit.Negate {
+		amount = -1 * amount
+	}
+	if matchesAnyCondition(p.config.Credit.NegateIf, record) {
 		amount = -1 * amount
 	}
 
