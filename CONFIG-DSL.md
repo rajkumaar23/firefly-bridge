@@ -261,8 +261,8 @@ Holdings are stored in the Firefly account notes field as a comma-separated stri
 | Prefix | Symbol format | Data source |
 |---|---|---|
 | _(none / any other value)_ | Stock ticker, e.g. `AAPL` | Yahoo Finance — `https://query2.finance.yahoo.com/v8/finance/chart/<symbol>` |
-| `mi` | Fund path on Markets Insider, e.g. `mi:vanguard-ftse-all-world-fund-IE00B3RBWM25` | Markets Insider — `https://markets.businessinsider.com/funds/<symbol>` |
-| `mc` | Fund path on MoneyControl, e.g. `mc:MF_XXXXX` | MoneyControl — `https://www.moneycontrol.com/mutual-funds/nav/.../<symbol>` |
+| `mi` | Fund path on Markets Insider, e.g. `mi:vanguard-target-retirement-2045-fund-us92202e6077` | Markets Insider — `https://markets.businessinsider.com/funds/<symbol>` |
+| `mc` | Fund path on MoneyControl, e.g. `mc:MUT029` | MoneyControl — `https://www.moneycontrol.com/mutual-funds/nav/find/MUT029` |
 | `gold` | Purity in parts-per-thousand, e.g. `gold:916` (22k) or `gold:999` (24k) | Kitco — `https://api.kitco.com/api/v1/precious-metals/au/` — spot bid price × (purity ÷ 1000) |
 | `cash` | Any value (ignored), e.g. `cash:USD` | Always returns `1` — use for cash, money-market positions, or private symbols with no public price feed (e.g. 401k trust funds) |
 
