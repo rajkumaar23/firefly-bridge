@@ -6,6 +6,56 @@ Firefly Bridge fetches transactions and balances directly from financial institu
 
 All institution-specific logic — login flows, CSS selectors, CSV column mappings, and secret references — is defined in a `config.yaml` file, keeping sensitive details private and configuration explicit. See [CONFIG-DSL.md](CONFIG-DSL.md) for a complete reference of every available option.
 
+> [!CAUTION]
+> **Back up your Firefly III database before running any tool in this project.**
+>
+> `firefly-bridge`, `backfill-hashes`, and `portfolio-sync` all write directly to your Firefly III instance via its API. Mistakes in configuration or unexpected data can result in incorrect or duplicate transactions that are difficult to reverse. Export a database snapshot before each run, and verify the results on a test instance first if possible.
+
+### How firefly-bridge tracks state in Firefly
+
+firefly-bridge relies on two Firefly III fields to operate correctly and avoid duplicating data:
+
+- **`internal_reference` (transactions)** — used for regular accounts. Every transaction imported by firefly-bridge is tagged with a deterministic SHA-256 hash stored in this field. Before importing a transaction, firefly-bridge searches Firefly for a matching `internal_reference` and skips the transaction if one is found. **Do not manually clear or overwrite this field** on transactions managed by firefly-bridge.
+- **Account notes (investment accounts)** — used to store the current holdings of an investment account (e.g. `AAPL=10.00000000,VTSAX=50.00000000`). `portfolio-sync` reads this field to calculate real-time portfolio value. **Do not use the notes field for other purposes** on accounts managed by firefly-bridge.
+
+> [!WARNING]
+> **Run `backfill-hashes` before your first firefly-bridge sync if you already have transactions in Firefly.**
+>
+> firefly-bridge uses the `internal_reference` field on each transaction to detect duplicates. If your Firefly database already contains transactions that were imported manually or by another tool, those transactions will lack an `internal_reference` and firefly-bridge will re-import them as duplicates on its first run.
+>
+> The `backfill-hashes` companion tool walks every asset account, computes the correct hash for each existing transaction, and writes it to `internal_reference` — preventing duplication without touching any other transaction data. Run it once before enabling firefly-bridge:
+>
+> ```
+> backfill-hashes --host http://firefly.example.com --token <token>
+> ```
+>
+> The tool will show you exactly how many transactions and splits will be updated for each account and ask for your confirmation before making any changes.
+
+## Backfill Hashes
+
+`backfill-hashes` is a one-time setup tool that populates the `internal_reference` field on existing Firefly transactions so that firefly-bridge can identify them as already-imported and will not create duplicates.
+
+### Usage
+
+```
+backfill-hashes [flags]
+```
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--host` | string | `""` | Firefly host URL. Can also be set via `$FIREFLY_HOST`. |
+| `--token` | string | `""` | Firefly personal access token. Can also be set via `$FIREFLY_TOKEN`. |
+| `--debug` | bool | `false` | Enable verbose debug logging. |
+
+For each asset account the tool will display the number of transaction groups and individual splits that are missing `internal_reference`, then ask:
+
+```
+[Checking Account] 42 transaction group(s) | 42 split(s) missing internal_reference
+Update? (y/n):
+```
+
+Answer `y` to apply the hashes for that account or `n` to skip it. The tool tracks which transaction groups have already been updated, so a single group that appears in multiple accounts' transaction lists (e.g. a transfer) is only updated once.
+
 ## CLI Flags
 
 ```
