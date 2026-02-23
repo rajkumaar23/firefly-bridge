@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/oapi-codegen/v2/pkg/securityprovider"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/rajkumaar23/firefly-bridge/internal/market"
 )
 
@@ -226,6 +227,36 @@ func (t *TransactionSplitStore) HashV2() string {
 		accountID = t.DestinationId
 	}
 	return computeHashV2(t.Date, t.Amount, t.Type, t.Description, *accountID)
+}
+
+// CreateTag creates a Firefly tag with the given name and today's date.
+// Setting the date property groups all transactions uploaded on the same day
+// under a single dated tag in the Firefly UI.
+func (ff *ClientWithResponses) CreateTag(ctx context.Context, tag string) error {
+	today := openapi_types.Date{Time: time.Now()}
+	res, err := ff.StoreTagWithResponse(ctx, &StoreTagParams{}, StoreTagJSONRequestBody{
+		Tag:  tag,
+		Date: &today,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create tag: %w", err)
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return fmt.Errorf("unexpected status creating tag: %s", res.Status())
+	}
+	return nil
+}
+
+// RemoveTag deletes the Firefly tag with the given name.
+func (ff *ClientWithResponses) RemoveTag(ctx context.Context, tag string) error {
+	res, err := ff.DeleteTagWithResponse(ctx, tag, &DeleteTagParams{})
+	if err != nil {
+		return fmt.Errorf("failed to delete tag: %w", err)
+	}
+	if res.StatusCode() != http.StatusNoContent {
+		return fmt.Errorf("unexpected status deleting tag: %s", res.Status())
+	}
+	return nil
 }
 
 // TransactionExists checks if a transaction with the same hash already exists in Firefly.

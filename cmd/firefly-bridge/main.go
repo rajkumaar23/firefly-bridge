@@ -82,19 +82,27 @@ func run() int {
 
 	syncThreshold := time.Duration(*forceSyncDays) * 24 * time.Hour
 
-	fireflyTag := fmt.Sprintf("firefly-bridge-%s", time.Now().Format(time.RFC3339))
+	fireflyTag := fmt.Sprintf("bridge-%s", time.Now().Format("Jan-2T15:04"))
+	if err := ff.CreateTag(ctx, fireflyTag); err != nil {
+		logger.Warnf("failed to create tag %q: %s", fireflyTag, err.Error())
+	}
 	totalUploadCount := 0
-	logUploadSummary := func() {
-		if totalUploadCount > 0 {
+	cleanup := func() {
+		if totalUploadCount == 0 {
+			if err := ff.RemoveTag(ctx, fireflyTag); err != nil {
+				logger.Warnf("failed to delete unused tag %q: %s", fireflyTag, err.Error())
+			}
+		} else {
 			logger.Infof("%d transactions uploaded at %s/tags/show/%s", totalUploadCount, strings.TrimSuffix(cfg.Firefly.Host, "/"), strings.ReplaceAll(fireflyTag, " ", "%20"))
 		}
 	}
+	defer cleanup()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for sig := range c {
-			logUploadSummary()
+			cleanup()
 			logger.Panicf("SIGINT received %s", sig.String())
 		}
 	}()
@@ -165,8 +173,6 @@ func run() int {
 			}
 		}
 	}
-
-	logUploadSummary()
 
 	if len(errs) > 0 {
 		logger.Errorf("%d error(s) occurred:", len(errs))
