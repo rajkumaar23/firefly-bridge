@@ -77,6 +77,9 @@ func main() {
 	})
 
 	for _, account := range accounts.ApplicationvndApiJSON200.Data {
+		if !*account.Attributes.Active {
+			continue
+		}
 		aLog := logger.WithField("account", account.Attributes.Name)
 		notes := account.Attributes.Notes
 		if notes == nil || *notes == "" {
