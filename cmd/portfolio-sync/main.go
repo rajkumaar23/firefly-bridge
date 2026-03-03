@@ -23,7 +23,7 @@ func main() {
 	var debug = flag.Bool("debug", false, "enable debug logs")
 	var host = flag.String("host", "", "firefly host (eg: http://firefly.lan.example.com), alternative to setting it via environment $FIREFLY_HOST")
 	var token = flag.String("token", "", "firefly access token, alternative to setting it via environment $FIREFLY_TOKEN")
-	var defaultCategory = flag.String("category", "Savings & Investments", "default category for transactions created by this tool")
+	var defaultCategory = flag.String("category", "P&L", "default category for transactions created by this tool")
 	flag.Parse()
 
 	logger := logrus.New()
