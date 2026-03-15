@@ -39,6 +39,7 @@ This document is a complete reference for every attribute and feature available 
     - [Amount Columns](#amount-columns)
     - [`skip_row_conditions` / `negate_if`](#skip_row_conditions--negate_if)
   - [`holdings`](#holdings)
+  - [`evaluate`](#evaluate)
 - [Template Functions](#template-functions)
 - [Amount Parsing](#amount-parsing)
 - [Validation Rules Summary](#validation-rules-summary)
@@ -148,7 +149,9 @@ Configures the 1Password secret provider using a Service Account token.
 
 ### Secret References in Values
 
-Once a secret provider is configured, any `value` field in `send_keys` or `set_value` steps can use a secret URI:
+Once a secret provider is configured, secrets can be referenced in two ways depending on the step type:
+
+**Whole-value reference** — `value` fields in `send_keys` and `set_value` steps accept a bare URI that is resolved to the secret value:
 
 ```yaml
 - type: send_keys
@@ -156,13 +159,26 @@ Once a secret provider is configured, any `value` field in `send_keys` or `set_v
   value: "op://vault-name/item-name/field-name"
 ```
 
+If the value does not contain `://`, it is used as a literal string. Secret resolution happens before template parsing, so a value cannot be both a secret reference and a template expression.
+
+**Inline reference** — `evaluate` fields in `balance` and `evaluate` steps support `op://` URIs embedded anywhere inside a larger string (e.g., a JavaScript snippet). Each `op://...` reference is resolved independently, and the surrounding text is left untouched:
+
+```yaml
+- type: evaluate
+  evaluate: |
+    fetch('https://api.example.com/token', {
+      body: JSON.stringify({
+        username: 'op://Vault/Item/username',
+        password: 'op://Vault/Item/password',
+      }),
+    })
+```
+
 **1Password URI format:** `op://vault/item/field`
 
 - `vault` — name or UUID of the 1Password vault
 - `item` — name or UUID of the item
 - `field` — name of the field within the item (e.g., `username`, `password`)
-
-If the value does not contain `://`, it is used as a literal string. Secret resolution happens before template parsing, so a value cannot be both a secret reference and a template expression.
 
 ---
 
@@ -698,6 +714,44 @@ Multiple `holdings` steps in a single flow are supported — their results are *
 
 ---
 
+### `evaluate`
+
+Evaluates arbitrary JavaScript on the current page and discards the return value. Use this for side-effectful JS — e.g. making an API call and triggering a programmatic file download — where the result is handled inside the script itself rather than returned to the bridge.
+
+Async functions are supported; the step awaits any returned Promise before continuing.
+
+`op://` secret references can be embedded directly inside the JavaScript string and are resolved before evaluation.
+
+```yaml
+- type: evaluate
+  evaluate: |
+    (async () => {
+      const token = await fetch('https://api.example.com/token', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'op://Vault/Item/username',
+          password: 'op://Vault/Item/password',
+        }),
+      }).then(r => r.json()).then(d => d.access_token);
+
+      const data = await fetch('https://api.example.com/balance', {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json());
+
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'result.json';
+      a.click();
+    })()
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `evaluate` | string | yes | JavaScript to evaluate. Async functions are awaited. The return value is ignored. `op://` secret references embedded in the string are resolved before evaluation. |
+
+---
+
 ## Template Functions
 
 The `value` field in [`send_keys`](#send_keys) and [`set_value`](#set_value) steps supports Go text/template syntax. Templates are processed after secret resolution. Use `{{ }}` delimiters.
@@ -816,6 +870,7 @@ The config is fully validated on load. Errors are reported with field paths.
 | `transactions` | Requires exactly one of `csv` or `excel` |
 | `transactions csv/excel fields` | Requires `date` and `description`; requires `amount` OR both `debit`+`credit`; cannot have both `amount` and `debit`/`credit` |
 | `holdings.evaluate` | Required |
+| `evaluate.evaluate` | Required |
 | `match_condition.column` | Required, positive integer |
 | `match_condition.operation` | Required, must be one of: `equals`, `contains`, `starts_with`, `ends_with`, `empty`, `not_empty` |
 | `match_condition.value` | Required when `operation` is `equals`, `contains`, `starts_with`, or `ends_with` |
