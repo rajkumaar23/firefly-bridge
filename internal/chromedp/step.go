@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/csv"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
+	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"gopkg.in/yaml.v3"
 )
@@ -26,6 +28,7 @@ const (
 	StepGetBalance      StepType = "balance"
 	StepGetTransactions StepType = "transactions"
 	StepGetHoldings     StepType = "holdings"
+	StepEvaluate        StepType = "evaluate"
 )
 
 type BrowserStep struct {
@@ -66,6 +69,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &GetTransactionsStep{}
 	case StepGetHoldings:
 		step = &HoldingsStep{}
+	case StepEvaluate:
+		step = &EvaluateStep{}
 	default:
 		return fmt.Errorf("unknown browser step type: %s", typeHolder.Type)
 	}
@@ -81,6 +86,12 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 type Step interface {
 	Type() StepType
 	Execute(c *ChromeDP, results map[StepType]interface{}) error
+}
+
+// awaitPromise is an EvalOption that instructs Chrome to await a returned Promise.
+// Required when the evaluate expression is an async function.
+func awaitPromise(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+	return p.WithAwaitPromise(true)
 }
 
 // Below are implementations of different step types.
@@ -234,7 +245,11 @@ func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) erro
 	if s.Selector != "" {
 		action = chromedp.Text(s.Selector, &result)
 	} else if s.Evaluate != "" {
-		action = chromedp.Evaluate(s.Evaluate, &result)
+		eval, err := secrets.ResolveRefs(c.Ctx, s.Evaluate, c.secretResolver)
+		if err != nil {
+			return fmt.Errorf("failed to resolve secret refs: %w", err)
+		}
+		action = chromedp.Evaluate(eval, &result, awaitPromise)
 	} else {
 		return fmt.Errorf("either selector or evaluate must be provided")
 	}
@@ -311,6 +326,30 @@ func parseHoldingsFromJS(jsResult interface{}) (*firefly.FireflyHoldings, error)
 	}
 
 	return &holdings, nil
+}
+
+// EvaluateStep runs arbitrary JavaScript on the page and discards the result.
+// Use this for side-effectful JS (e.g. triggering a download, clicking via JS).
+type EvaluateStep struct {
+	Evaluate string `yaml:"evaluate" validate:"required"`
+}
+
+func (s EvaluateStep) Type() StepType {
+	return StepEvaluate
+}
+
+func (s EvaluateStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	logger := utils.GetLogger(c.Ctx)
+	eval, err := secrets.ResolveRefs(c.Ctx, s.Evaluate, c.secretResolver)
+	if err != nil {
+		return fmt.Errorf("failed to resolve secret refs: %w", err)
+	}
+	var discard interface{}
+	if err := chromedp.Run(c.Ctx, chromedp.Evaluate(eval, &discard, awaitPromise)); err != nil {
+		logger.Errorf("evaluate step failed: %v", err)
+		return err
+	}
+	return nil
 }
 
 type (

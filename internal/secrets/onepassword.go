@@ -6,7 +6,34 @@ import (
 	"regexp"
 
 	"github.com/1password/onepassword-sdk-go"
+	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 )
+
+// opRefRegex matches all op:// secret references embedded in a larger string,
+// stopping at quote characters that would delimit the reference in JS/YAML.
+var opRefRegex = regexp.MustCompile(`op://[^"'` + "`" + `]+`)
+
+// ResolveRefs replaces all op:// references embedded within a larger string s.
+// Unlike Manager.Resolve, it does not treat the whole string as a secret reference,
+// making it suitable for JS snippets or YAML values that contain inline op:// refs.
+func ResolveRefs(ctx context.Context, s string, resolver utils.SecretResolver) (string, error) {
+	if resolver == nil {
+		return s, nil
+	}
+	var resolveErr error
+	result := opRefRegex.ReplaceAllStringFunc(s, func(ref string) string {
+		if resolveErr != nil {
+			return ref
+		}
+		resolved, err := resolver.Resolve(ctx, ref)
+		if err != nil {
+			resolveErr = err
+			return ref
+		}
+		return resolved
+	})
+	return result, resolveErr
+}
 
 // OnePasswordProvider implements the Provider interface for 1Password
 // It uses the 1Password SDK to retrieve secrets
