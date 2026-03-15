@@ -39,7 +39,7 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-linux-${{ matrix.goarch }} ./cmd/portfolio-sync
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o backfill-hashes-linux-${{ matrix.goarch }} ./cmd/backfill-hashes
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-linux-${{ matrix.goarch }}
           path: |
@@ -77,7 +77,7 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-darwin-${{ matrix.goarch }} ./cmd/portfolio-sync
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o backfill-hashes-darwin-${{ matrix.goarch }} ./cmd/backfill-hashes
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-darwin-${{ matrix.goarch }}
           path: |
@@ -93,7 +93,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
@@ -129,7 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
