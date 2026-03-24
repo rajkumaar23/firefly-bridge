@@ -11,7 +11,7 @@ import (
 )
 
 func ParseAmountFromString(s string) (float64, error) {
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		return 0, nil
 	}
 

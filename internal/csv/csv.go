@@ -287,7 +287,7 @@ func (p *Parser) getAmount(record []string) (amount float64, err error) {
 	if p.config.Debit.Column <= 0 || p.config.Debit.Column > len(record) {
 		return 0.0, fmt.Errorf("debit column index out of bounds")
 	}
-	debitStr := record[p.config.Debit.Column-1]
+	debitStr := strings.TrimSpace(record[p.config.Debit.Column-1])
 
 	if debitStr != "" {
 		amount, err = utils.ParseAmountFromString(debitStr)
