@@ -361,6 +361,7 @@ type (
 		Excel *struct {
 			// Worksheet is the 1-based index of the worksheet to parse.
 			Worksheet int              `yaml:"worksheet" validate:"required"`
+			Password  string           `yaml:"password"`
 			Opts      *csv.Options     `yaml:"options"`
 			Config    *csv.FieldConfig `yaml:"fields" validate:"required,validateFn"`
 		} `yaml:"excel" validate:"required_without=CSV,excluded_with=CSV"`
@@ -381,8 +382,13 @@ func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface
 	var transactions []*firefly.TransactionSplitStore
 	var err error
 	if s.Excel != nil {
+		var password string
+		password, err = secrets.ResolveRefs(c.Ctx, s.Excel.Password, c.secretResolver)
+		if err != nil {
+			return fmt.Errorf("failed to resolve excel password: %w", err)
+		}
 		parser := csv.NewParser(c.Ctx, s.Excel.Opts, s.Excel.Config, c.CSVDebug)
-		transactions, err = parser.ParseFromExcel(fullPath, s.Excel.Worksheet-1)
+		transactions, err = parser.ParseFromExcel(fullPath, s.Excel.Worksheet-1, password)
 	} else if s.CSV != nil {
 		parser := csv.NewParser(c.Ctx, s.CSV.Opts, s.CSV.Config, c.CSVDebug)
 		transactions, err = parser.Parse(fullPath)

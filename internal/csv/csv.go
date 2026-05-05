@@ -227,8 +227,8 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
 	return transactions, nil
 }
 
-func (p *Parser) ParseFromExcel(path string, worksheetIndex int) ([]*firefly.TransactionSplitStore, error) {
-	xlFile := p.getExcelFile(path)
+func (p *Parser) ParseFromExcel(path string, worksheetIndex int, password string) ([]*firefly.TransactionSplitStore, error) {
+	xlFile := p.getExcelFile(path, password)
 
 	worksheets := xlFile.GetSheetList()
 	if len(worksheets) < 1 {
@@ -335,8 +335,8 @@ func (p *Parser) getCategory(record []string) (string, error) {
 }
 
 // Helpers to convert XLS(X) files to CSV
-func (p *Parser) getExcelFile(fileName string) *excelize.File {
-	xlFile, xlErr := excelize.OpenFile(fileName)
+func (p *Parser) getExcelFile(fileName string, password string) *excelize.File {
+	xlFile, xlErr := excelize.OpenFile(fileName, excelize.Options{Password: password})
 	if xlErr != nil {
 		panic(xlErr)
 	}

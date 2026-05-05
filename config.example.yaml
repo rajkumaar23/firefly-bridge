@@ -296,6 +296,7 @@ institutions:
           - type: transactions
             excel:
               worksheet: 1        # 1-based sheet index (1 = first sheet)
+              # password: "secret"  # optional; supports op:// secret refs e.g. op://vault/item/field
               options:
                 skip_head_rows: 2 # skip two header rows
                 skip_tail_rows: 1 # skip one totals row at bottom

@@ -518,6 +518,7 @@ Multiple `transactions` steps in a single flow are supported — their results a
 - type: transactions
   excel:
     worksheet: 1
+    password: "op://Vault/Item/excel-password"  # optional; plain string or op:// ref
     options:
       skip_head_rows: 1
     fields:
@@ -532,7 +533,8 @@ Multiple `transactions` steps in a single flow are supported — their results a
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `worksheet` | integer | yes (Excel only) | 1-based index of the worksheet to parse (1 = first sheet, 2 = second, etc.). |
+| `worksheet` | integer | yes | 1-based index of the worksheet to parse (1 = first sheet, 2 = second, etc.). |
+| `password` | string | no | Password to unlock a password-protected Excel file. Supports inline `op://` secret references. |
 | `options` | object | no | Parsing options. See [`options`](#options). |
 | `fields` | object | yes | Column mapping. See [`fields`](#fields). |
 
