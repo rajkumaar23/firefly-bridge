@@ -42,8 +42,8 @@ type OnePasswordProvider struct {
 	client *onepassword.Client
 }
 
-// onePasswordURIPattern matches 1Password URIs like "op://vault/item/field"
-var onePasswordURIPattern = regexp.MustCompile(`^op://([^/]+)/([^/]+)/([^/]+)$`)
+// onePasswordURIPattern matches 1Password URIs like "op://vault/item/field/"
+var onePasswordURIPattern = regexp.MustCompile(`^op://([^/]+)/([^/]+)/(.+)$`)
 
 // NewOnePasswordProvider creates a new 1Password provider
 func NewOnePasswordProvider(ctx context.Context, token string) (*OnePasswordProvider, error) {
