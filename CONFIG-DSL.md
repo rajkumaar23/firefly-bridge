@@ -25,6 +25,7 @@ This document is a complete reference for every attribute and feature available 
   - [`navigate`](#navigate)
   - [`wait_visible`](#wait_visible)
   - [`wait_not_visible`](#wait_not_visible)
+  - [`wait_not_present`](#wait_not_present)
   - [`click`](#click)
   - [`sleep`](#sleep)
   - [`reload`](#reload)
@@ -340,6 +341,26 @@ Pauses execution until a DOM element is no longer visible. Useful for waiting fo
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `selector` | string | one of `selector` or `js_path` | CSS selector for the element to wait to disappear. |
+| `js_path` | string | one of `selector` or `js_path` | JavaScript expression that evaluates to a DOM element. |
+
+---
+
+### `wait_not_present`
+
+Pauses execution until a DOM element is completely removed from the DOM. Unlike [`wait_not_visible`](#wait_not_visible), this waits for the element to no longer exist in the document at all — not merely be hidden. Useful when an element is fully destroyed after a transition rather than just hidden.
+
+```yaml
+- type: wait_not_present
+  selector: "#modal-dialog"
+
+# Or, using a JavaScript path:
+- type: wait_not_present
+  js_path: "document.querySelector('#modal-dialog')"
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `selector` | string | one of `selector` or `js_path` | CSS selector for the element to wait to be removed from the DOM. |
 | `js_path` | string | one of `selector` or `js_path` | JavaScript expression that evaluates to a DOM element. |
 
 ---
