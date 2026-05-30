@@ -71,6 +71,7 @@ firefly-bridge [flags]
 | `-config` | string | `"config.yaml"` | Path to the YAML configuration file. See [CONFIG-DSL.md](CONFIG-DSL.md). |
 | `-state` | string | `".state.json"` | Path to the state file that tracks the last successful run per institution and account. |
 | `-institution` | string | `""` | Run only the institution with this exact name (case-sensitive). Skips all other institutions and also bypasses cooldown and balance-unchanged checks for the specified institution. |
+| `-skip` | string | `""` | Comma-separated list of institution names (case-sensitive) to skip. All other institutions run normally. |
 | `-force` | bool | `false` | Bypass the per-institution cooldown and the per-account balance-unchanged skip. Forces a full sync of every institution and account regardless of state. |
 | `-sync-days` | int | `10` | Force a full transaction sync for an account after this many days have elapsed since the last sync, even if the scraped balance matches the Firefly balance. |
 | `-debug` | bool | `false` | Enable verbose debug logging for firefly-bridge internals. |

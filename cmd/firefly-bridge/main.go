@@ -35,6 +35,7 @@ func run() int {
 	var force = flag.Bool("force", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
 	var forceSyncDays = flag.Int("sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
 	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")
+	var skipInstitutions = flag.String("skip", "", "comma-separated list of institution names to skip; all other institutions run normally")
 	var csvDebug = flag.Bool("csv-debug", false, "log every parsed CSV row with its row number to help diagnose parsing issues")
 	flag.Parse()
 
@@ -109,10 +110,22 @@ func run() int {
 
 	var errs []error
 
+	skipSet := make(map[string]bool)
+	if *skipInstitutions != "" {
+		for _, name := range strings.Split(*skipInstitutions, ",") {
+			skipSet[strings.TrimSpace(name)] = true
+		}
+	}
+
 	for _, i := range cfg.Institutions {
 		iLog := logger.WithField("institution", i.Name)
 
 		if *onlyInstitution != "" && i.Name != *onlyInstitution {
+			continue
+		}
+
+		if skipSet[i.Name] {
+			iLog.Infof("skipping (excluded via -skip flag)")
 			continue
 		}
 
