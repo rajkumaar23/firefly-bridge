@@ -259,9 +259,35 @@ func (ff *ClientWithResponses) RemoveTag(ctx context.Context, tag string) error 
 	return nil
 }
 
-// ListCategoryNames returns the names of every category defined in Firefly.
-// The categorizer uses this to constrain the model's output to categories that
-// already exist, so it never invents (and thereby creates) new ones.
+// lifetimeRange returns a date window wide enough to capture a category's or
+// budget's entire history, used to ask Firefly for lifetime spent/earned sums so
+// unused entries can be filtered out.
+func lifetimeRange() (openapi_types.Date, openapi_types.Date) {
+	return openapi_types.Date{Time: time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)},
+		openapi_types.Date{Time: time.Now()}
+}
+
+// hasActivity reports whether any of the given spent/earned/transferred sum
+// arrays is populated, i.e. the category or budget has had at least one
+// transaction in the queried window. Firefly only includes a currency entry when
+// there was activity in it, so a non-empty array means non-zero transactions.
+func hasActivity(groups ...*[]ArrayEntryWithCurrencyAndSum) bool {
+	for _, g := range groups {
+		if g != nil && len(*g) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// ListCategoryNames returns the names of categories that have at least one
+// transaction. The categorizer uses this to constrain the model's output to
+// categories that already exist (so it never invents new ones) while dropping
+// empty categories that would only add noise to a small model's prompt.
+//
+// The list endpoint doesn't report per-category sums, so each category is
+// probed individually for lifetime activity. If a probe fails the category is
+// kept (fail open) rather than silently dropped.
 func (ff *ClientWithResponses) ListCategoryNames(ctx context.Context) ([]string, error) {
 	limit := int32(1000)
 	res, err := ff.ListCategoryWithResponse(ctx, &ListCategoryParams{Limit: &limit})
@@ -271,16 +297,28 @@ func (ff *ClientWithResponses) ListCategoryNames(ctx context.Context) ([]string,
 	if res.ApplicationvndApiJSON200 == nil {
 		return nil, fmt.Errorf("got unexpected status code listing categories: %s", res.Status())
 	}
+	start, end := lifetimeRange()
 	names := make([]string, 0, len(res.ApplicationvndApiJSON200.Data))
 	for _, c := range res.ApplicationvndApiJSON200.Data {
-		if c.Attributes.Name != "" {
+		if c.Attributes.Name == "" {
+			continue
+		}
+		det, err := ff.GetCategoryWithResponse(ctx, c.Id, &GetCategoryParams{Start: &start, End: &end})
+		if err != nil || det.ApplicationvndApiJSON200 == nil {
+			names = append(names, c.Attributes.Name) // fail open
+			continue
+		}
+		a := det.ApplicationvndApiJSON200.Data.Attributes
+		if hasActivity(a.Spent, a.Earned, a.Transferred) {
 			names = append(names, c.Attributes.Name)
 		}
 	}
 	return names, nil
 }
 
-// ListBudgetNames returns the names of every budget defined in Firefly.
+// ListBudgetNames returns the names of active budgets. Inactive budgets are
+// excluded so they don't clutter the model's prompt; unlike categories, active
+// budgets are always included regardless of transaction count.
 func (ff *ClientWithResponses) ListBudgetNames(ctx context.Context) ([]string, error) {
 	limit := int32(1000)
 	res, err := ff.ListBudgetWithResponse(ctx, &ListBudgetParams{Limit: &limit})
@@ -292,9 +330,13 @@ func (ff *ClientWithResponses) ListBudgetNames(ctx context.Context) ([]string, e
 	}
 	names := make([]string, 0, len(res.ApplicationvndApiJSON200.Data))
 	for _, b := range res.ApplicationvndApiJSON200.Data {
-		if b.Attributes.Name != "" {
-			names = append(names, b.Attributes.Name)
+		if b.Attributes.Name == "" {
+			continue
 		}
+		if b.Attributes.Active != nil && !*b.Attributes.Active {
+			continue // explicitly inactive
+		}
+		names = append(names, b.Attributes.Name)
 	}
 	return names, nil
 }

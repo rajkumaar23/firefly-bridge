@@ -203,6 +203,7 @@ ai:
   categories: true
   budgets: false
   overwrite_existing: false
+  always_ask_model: false
   max_examples: 5
   timeout_seconds: 30
 ```
@@ -216,6 +217,7 @@ ai:
 | `categories` | bool | no | `false` | Let the model assign a category. |
 | `budgets` | bool | no | `false` | Let the model assign a budget. |
 | `overwrite_existing` | bool | no | `false` | Enrich even when the transaction already has a category/budget (e.g. a noisy label from the source CSV), re-mapping it onto Firefly's taxonomy. An existing value is only ever replaced with a better one that exists in Firefly — never blanked out. |
+| `always_ask_model` | bool | no | `false` | Disable the reuse-first shortcut so the model is consulted for every wanted field even when similar past transactions agree. The historical values are still passed to the model as few-shot context. Enable when you don't trust historical labels; note it bypasses the "mirror existing rule assignments" behavior. |
 | `max_examples` | int | no | `5` | How many similar past transactions are used as reuse precedent and few-shot context. |
 | `timeout_seconds` | int | no | `30` | Per-request timeout for the chat endpoint. |
 
@@ -224,8 +226,8 @@ ai:
 The categorizer is built to **complement** Firefly III's rule engine, never to fight it:
 
 1. **Leaves existing values alone by default.** If a transaction already carries a category (for example one parsed from the source CSV via a [`transactions`](#transactions) category column), it is left untouched — unless `overwrite_existing` is set, in which case the noisy label is re-mapped onto the closest matching Firefly category/budget. Even then the value is only ever replaced with another existing one, never blanked out.
-2. **Constrained to what exists.** The model may only choose from categories and budgets that already exist in Firefly. It cannot invent new ones, so it never creates entries a rule doesn't know about.
-3. **Reuse before asking.** For each transaction it searches Firefly for similar past transactions (matched on a keyword from the description). If a strict majority of them already share a category/budget — typically because a rule or you assigned it — that value is reused directly and the model is not consulted. The model is only asked when there is no clear precedent, and its answer is discarded unless it exactly matches an existing name.
+2. **Constrained to what exists (and is in use).** The model may only choose from categories and budgets that already exist in Firefly, so it never creates entries a rule doesn't know about. The candidate list is further narrowed to keep prompts small for local models: **active budgets** (regardless of transaction count) and **categories that have at least one transaction** — inactive budgets and empty categories are dropped.
+3. **Reuse before asking.** For each transaction it searches Firefly for similar past transactions (matched on a keyword from the description). If a strict majority of them already share a category/budget — typically because a rule or you assigned it — that value is reused directly and the model is not consulted. The model is only asked when there is no clear precedent, and its answer is discarded unless it exactly matches an existing name. Set `always_ask_model: true` to skip this shortcut and let the model decide every time (the historical values are still handed to it as few-shot context).
 
 Enrichment is **best-effort**: any failure (endpoint down, timeout, unparseable reply) is logged as a warning and the transaction is uploaded without AI-assigned fields.
 

@@ -34,6 +34,14 @@ type Config struct {
 	Categories bool `yaml:"categories"`
 	Budgets    bool `yaml:"budgets"`
 
+	// AlwaysAskModel, when true, disables the reuse-first shortcut: the model is
+	// consulted for every wanted field even when similar past transactions agree
+	// on a value. Those past values are still passed to the model as few-shot
+	// context. Enable this when you don't trust historical labels and want the
+	// model to have the final say. Note this bypasses the "mirror existing rule
+	// assignments" behavior. Defaults to false.
+	AlwaysAskModel bool `yaml:"always_ask_model"`
+
 	// OverwriteExisting, when true, lets enrichment run even for transactions
 	// that already carry a category/budget (e.g. one parsed from the source
 	// CSV). Banks often emit noisy or unhelpful labels; enabling this lets them

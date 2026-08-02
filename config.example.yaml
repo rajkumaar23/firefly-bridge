@@ -39,6 +39,7 @@ ai:
   categories: true                            # let the model assign categories
   budgets: false                              # let the model assign budgets
   overwrite_existing: false                   # re-map noisy bank labels onto Firefly's taxonomy; never blanks a value, only replaces it with a better existing one
+  always_ask_model: false                     # disable reuse-first: consult the model even when similar past transactions agree (they're still passed as examples)
   max_examples: 5                             # similar past transactions used as context (default 5)
   timeout_seconds: 30                         # per-request timeout (default 30)
 

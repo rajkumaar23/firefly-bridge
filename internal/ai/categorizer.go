@@ -88,22 +88,26 @@ func (c *Categorizer) Enrich(ctx context.Context, txn *firefly.TransactionSplitS
 		c.logger.Debugf("could not fetch similar transactions for %q: %s", txn.Description, err.Error())
 	}
 
-	// Reuse-first: honor whatever similar transactions already carry.
-	if wantCategory {
-		if v, ok := consensus(exampleValues(examples, func(s firefly.TransactionSplit) *string { return s.CategoryName })); ok {
-			if canonical, valid := match(v, c.categories); valid {
-				txn.CategoryName = &canonical
-				wantCategory = false
-				c.logger.Debugf("reused category %q for %q from similar transactions", canonical, txn.Description)
+	// Reuse-first: honor whatever similar transactions already carry, unless the
+	// user has opted to always consult the model (examples are still passed to
+	// it as few-shot context below).
+	if !c.cfg.AlwaysAskModel {
+		if wantCategory {
+			if v, ok := consensus(exampleValues(examples, func(s firefly.TransactionSplit) *string { return s.CategoryName })); ok {
+				if canonical, valid := match(v, c.categories); valid {
+					txn.CategoryName = &canonical
+					wantCategory = false
+					c.logger.Debugf("reused category %q for %q from similar transactions", canonical, txn.Description)
+				}
 			}
 		}
-	}
-	if wantBudget {
-		if v, ok := consensus(exampleValues(examples, func(s firefly.TransactionSplit) *string { return s.BudgetName })); ok {
-			if canonical, valid := match(v, c.budgets); valid {
-				txn.BudgetName = &canonical
-				wantBudget = false
-				c.logger.Debugf("reused budget %q for %q from similar transactions", canonical, txn.Description)
+		if wantBudget {
+			if v, ok := consensus(exampleValues(examples, func(s firefly.TransactionSplit) *string { return s.BudgetName })); ok {
+				if canonical, valid := match(v, c.budgets); valid {
+					txn.BudgetName = &canonical
+					wantBudget = false
+					c.logger.Debugf("reused budget %q for %q from similar transactions", canonical, txn.Description)
+				}
 			}
 		}
 	}
@@ -140,10 +144,14 @@ func (c *Categorizer) askModel(ctx context.Context, txn *firefly.TransactionSpli
 		fmt.Fprintf(&b, "Similar past transactions:\n%s", ex)
 	}
 
-	raw, err := c.client.complete(ctx, system, b.String())
+	userPrompt := b.String()
+	c.logger.Debugf("model request for %q:\n--- system ---\n%s\n--- user ---\n%s", txn.Description, system, userPrompt)
+
+	raw, err := c.client.complete(ctx, system, userPrompt)
 	if err != nil {
 		return fmt.Errorf("model call failed: %w", err)
 	}
+	c.logger.Debugf("model response for %q:\n%s", txn.Description, raw)
 
 	var out struct {
 		Category string `json:"category"`
