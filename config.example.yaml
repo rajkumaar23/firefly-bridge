@@ -18,6 +18,30 @@ secrets:
   onepassword:
     token: "${ENV:OP_SERVICE_ACCOUNT_TOKEN}" # or literal: "ops_your_service_account_token"
 
+# ── AI categorization (optional) ─────────────────────────────────────────────
+# When enabled, each new transaction is assigned a category and/or budget before
+# it is uploaded, using any OpenAI-compatible chat endpoint (llama.cpp, Ollama,
+# LocalAI, OpenAI, …). It is designed to COMPLEMENT Firefly's rule engine, not
+# fight it:
+#   • It never overwrites a value already set (e.g. a category parsed from CSV).
+#   • It only picks from categories/budgets that already exist in Firefly — it
+#     never invents new ones.
+#   • It first reuses whatever category/budget similar past transactions already
+#     carry (e.g. assigned by a Firefly rule) and only asks the model when there
+#     is no clear precedent — so existing rules win.
+# Tip for small local models (e.g. qwen on a Jetson): keep your Firefly category
+# and budget lists modest and max_examples low to stay within the context window.
+ai:
+  enabled: false                              # master switch; omit the whole block to disable
+  base_url: "http://jetson.local:8080/v1"     # OpenAI-compatible API root (includes /v1)
+  api_key: "op://my-vault/openai/token"       # optional; ${ENV:...}/op:// refs supported. Omit for auth-less local servers
+  model: "qwen2.5:9b"                          # model name passed to the endpoint
+  categories: true                            # let the model assign categories
+  budgets: false                              # let the model assign budgets
+  overwrite_existing: false                   # re-map noisy bank labels onto Firefly's taxonomy; never blanks a value, only replaces it with a better existing one
+  max_examples: 5                             # similar past transactions used as context (default 5)
+  timeout_seconds: 30                         # per-request timeout (default 30)
+
 # ── Browser executable (required) ────────────────────────────────────────────
 # macOS:
 browser_exec_path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"

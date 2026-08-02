@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rajkumaar23/firefly-bridge/internal/ai"
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/config"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
@@ -67,6 +68,19 @@ func run() int {
 		logger.Panicf("failed to create firefly client: %s", err.Error())
 	}
 	logger.Info("verified connection to firefly")
+
+	var categorizer *ai.Categorizer
+	if cfg.AI != nil && cfg.AI.Enabled {
+		apiKey, err := secretManager.Resolve(ctx, cfg.AI.APIKey)
+		if err != nil {
+			logger.Panicf("failed to resolve AI api_key: %s", err.Error())
+		}
+		categorizer, err = ai.New(ctx, cfg.AI, ff, apiKey, logger.WithField("component", "ai"))
+		if err != nil {
+			logger.Panicf("failed to initialize AI categorizer: %s", err.Error())
+		}
+		logger.Info("AI categorizer enabled")
+	}
 
 	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug, secretManager)
 	cdp.CSVDebug = *csvDebug
@@ -163,7 +177,7 @@ func run() int {
 				if forceThis {
 					lastSync = time.Time{}
 				}
-				skipped, err := processRegularAccount(ctx, aLog, cdp, ff, &a, &totalUploadCount, fireflyTag, lastSync, syncThreshold)
+				skipped, err := processRegularAccount(ctx, aLog, cdp, ff, categorizer, &a, &totalUploadCount, fireflyTag, lastSync, syncThreshold)
 				if err != nil {
 					aLog.Errorf("failed to process regular account: %s", err.Error())
 					errs = append(errs, fmt.Errorf("institution %s, account %s: failed to process regular account: %w", i.Name, a.Name, err))
@@ -260,7 +274,7 @@ func processInvestmentAccount(ctx context.Context, logger *logrus.Entry, cdp *ch
 // (true, nil) when the account is skipped because its balance is unchanged and
 // it was synced recently enough; the caller should not update the account's
 // last-sync timestamp in that case.
-func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, account *institution.Account, totalUploadCount *int, fireflyTag string, lastSync time.Time, syncThreshold time.Duration) (skipped bool, err error) {
+func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chromedp.ChromeDP, ff *firefly.ClientWithResponses, categorizer *ai.Categorizer, account *institution.Account, totalUploadCount *int, fireflyTag string, lastSync time.Time, syncThreshold time.Duration) (skipped bool, err error) {
 	balance, err := account.GetBalance(cdp)
 	if err != nil {
 		return false, fmt.Errorf("failed to get balance: %w", err)
@@ -308,7 +322,12 @@ func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chrom
 	uploaded := 0
 	for _, t := range filtered {
 		t.Tags = &[]string{fireflyTag}
-		//TODO: optionally use ollama here to identify category of transaction
+		if categorizer != nil {
+			if err := categorizer.Enrich(ctx, t); err != nil {
+				// Enrichment is best-effort; never block an upload on it.
+				logger.Warnf("failed to enrich transaction (%s, %s): %s", t.Date.Format(time.DateOnly), t.Description, err.Error())
+			}
+		}
 		res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{Transactions: []firefly.TransactionSplitStore{*t}})
 		if err != nil {
 			return false, fmt.Errorf("failed to store transaction: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)

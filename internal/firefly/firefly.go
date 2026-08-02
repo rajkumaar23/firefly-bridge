@@ -259,6 +259,80 @@ func (ff *ClientWithResponses) RemoveTag(ctx context.Context, tag string) error 
 	return nil
 }
 
+// ListCategoryNames returns the names of every category defined in Firefly.
+// The categorizer uses this to constrain the model's output to categories that
+// already exist, so it never invents (and thereby creates) new ones.
+func (ff *ClientWithResponses) ListCategoryNames(ctx context.Context) ([]string, error) {
+	limit := int32(1000)
+	res, err := ff.ListCategoryWithResponse(ctx, &ListCategoryParams{Limit: &limit})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list categories: %w", err)
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return nil, fmt.Errorf("got unexpected status code listing categories: %s", res.Status())
+	}
+	names := make([]string, 0, len(res.ApplicationvndApiJSON200.Data))
+	for _, c := range res.ApplicationvndApiJSON200.Data {
+		if c.Attributes.Name != "" {
+			names = append(names, c.Attributes.Name)
+		}
+	}
+	return names, nil
+}
+
+// ListBudgetNames returns the names of every budget defined in Firefly.
+func (ff *ClientWithResponses) ListBudgetNames(ctx context.Context) ([]string, error) {
+	limit := int32(1000)
+	res, err := ff.ListBudgetWithResponse(ctx, &ListBudgetParams{Limit: &limit})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list budgets: %w", err)
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return nil, fmt.Errorf("got unexpected status code listing budgets: %s", res.Status())
+	}
+	names := make([]string, 0, len(res.ApplicationvndApiJSON200.Data))
+	for _, b := range res.ApplicationvndApiJSON200.Data {
+		if b.Attributes.Name != "" {
+			names = append(names, b.Attributes.Name)
+		}
+	}
+	return names, nil
+}
+
+// FindSimilarTransactions returns up to limit existing transaction splits whose
+// description contains the given keyword, most-recent first. These act both as
+// few-shot examples for the model and as a source of already-assigned
+// category/budget values (e.g. set by Firefly rules) that can be reused
+// directly. Returns nil (no error) when keyword is empty.
+func (ff *ClientWithResponses) FindSimilarTransactions(ctx context.Context, keyword string, limit int) ([]TransactionSplit, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	pageLimit := int32(limit)
+	res, err := ff.SearchTransactionsWithResponse(ctx, &SearchTransactionsParams{
+		Query: fmt.Sprintf("description_contains:%q", keyword),
+		Limit: &pageLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to search similar transactions: %w", err)
+	}
+	if res.ApplicationvndApiJSON200 == nil {
+		return nil, fmt.Errorf("got unexpected status code searching transactions: %s", res.Status())
+	}
+	var splits []TransactionSplit
+	for _, group := range res.ApplicationvndApiJSON200.Data {
+		splits = append(splits, group.Attributes.Transactions...)
+		if len(splits) >= limit {
+			break
+		}
+	}
+	if len(splits) > limit {
+		splits = splits[:limit]
+	}
+	return splits, nil
+}
+
 // TransactionExists checks if a transaction with the same hash already exists in Firefly.
 // This is used to avoid creating duplicate transactions in Firefly.
 func (ff *ClientWithResponses) TransactionExists(ctx context.Context, transaction *TransactionSplitStore) (bool, error) {

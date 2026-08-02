@@ -14,6 +14,7 @@ This document is a complete reference for every attribute and feature available 
 - [`secrets`](#secrets)
   - [`secrets.onepassword`](#secretsonepassword)
   - [Secret References in Values](#secret-references-in-values)
+- [`ai`](#ai)
 - [`browser_exec_path`](#browser_exec_path)
 - [`institutions`](#institutions)
   - [Institution Fields](#institution-fields)
@@ -96,6 +97,11 @@ secrets:          # optional
   onepassword:
     token: "..."
 
+ai:               # optional
+  enabled: true
+  base_url: "..."
+  model: "..."
+
 browser_exec_path: "/path/to/chrome"  # required
 
 institutions:     # required, minimum 1
@@ -108,6 +114,7 @@ institutions:     # required, minimum 1
 |---|---|---|---|
 | `firefly` | object | yes | Firefly III API connection settings |
 | `secrets` | object | no | Secret provider configuration |
+| `ai` | object | no | AI-assisted category/budget assignment |
 | `browser_exec_path` | string | yes | Absolute path to the browser executable used for automation |
 | `institutions` | array | yes (min 1) | List of financial institutions to sync |
 
@@ -180,6 +187,50 @@ If the value does not contain `://`, it is used as a literal string. Secret reso
 - `vault` — name or UUID of the 1Password vault
 - `item` — name or UUID of the item
 - `field` — name of the field within the item (e.g., `username`, `password`)
+
+---
+
+## `ai`
+
+Optional. Enables AI-assisted assignment of a **category** and/or **budget** to each new transaction just before it is uploaded to Firefly III. Any endpoint that speaks the OpenAI chat-completions schema works — `llama.cpp`'s server, Ollama's OpenAI shim, LocalAI, OpenAI itself, etc. — so it can run entirely against a small self-hosted model.
+
+```yaml
+ai:
+  enabled: true
+  base_url: "http://jetson.local:8080/v1"
+  api_key: "op://my-vault/openai/token"   # optional
+  model: "qwen2.5:9b"
+  categories: true
+  budgets: false
+  overwrite_existing: false
+  max_examples: 5
+  timeout_seconds: 30
+```
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `enabled` | bool | no | `false` | Master switch. When absent or `false`, transactions are uploaded unchanged. |
+| `base_url` | string | if enabled | — | OpenAI-compatible API root, including the version segment (e.g. `.../v1`). Requests go to `{base_url}/chat/completions`. |
+| `api_key` | string | no | — | Sent as a `Bearer` token. Supports `${ENV:...}` expansion and `op://` secret references. Omit for auth-less local servers. |
+| `model` | string | if enabled | — | Model name passed to the endpoint. |
+| `categories` | bool | no | `false` | Let the model assign a category. |
+| `budgets` | bool | no | `false` | Let the model assign a budget. |
+| `overwrite_existing` | bool | no | `false` | Enrich even when the transaction already has a category/budget (e.g. a noisy label from the source CSV), re-mapping it onto Firefly's taxonomy. An existing value is only ever replaced with a better one that exists in Firefly — never blanked out. |
+| `max_examples` | int | no | `5` | How many similar past transactions are used as reuse precedent and few-shot context. |
+| `timeout_seconds` | int | no | `30` | Per-request timeout for the chat endpoint. |
+
+### How it works (and how it stays out of the way of rules)
+
+The categorizer is built to **complement** Firefly III's rule engine, never to fight it:
+
+1. **Leaves existing values alone by default.** If a transaction already carries a category (for example one parsed from the source CSV via a [`transactions`](#transactions) category column), it is left untouched — unless `overwrite_existing` is set, in which case the noisy label is re-mapped onto the closest matching Firefly category/budget. Even then the value is only ever replaced with another existing one, never blanked out.
+2. **Constrained to what exists.** The model may only choose from categories and budgets that already exist in Firefly. It cannot invent new ones, so it never creates entries a rule doesn't know about.
+3. **Reuse before asking.** For each transaction it searches Firefly for similar past transactions (matched on a keyword from the description). If a strict majority of them already share a category/budget — typically because a rule or you assigned it — that value is reused directly and the model is not consulted. The model is only asked when there is no clear precedent, and its answer is discarded unless it exactly matches an existing name.
+
+Enrichment is **best-effort**: any failure (endpoint down, timeout, unparseable reply) is logged as a warning and the transaction is uploaded without AI-assigned fields.
+
+> [!TIP]
+> On tiny local models (e.g. `qwen` on a Jetson Nano) context is scarce. Keep your Firefly category/budget lists modest and `max_examples` low — the prompt embeds the full allowed lists plus the examples, so both directly affect the token count.
 
 ---
 
