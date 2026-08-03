@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.svg">
+    <img width="100%" src="assets/banner-light.svg" alt="Firefly Bridge pipeline: banks, cards and brokerages are scraped with a browser (secrets from 1Password), parsed from CSV or XLSX, de-duplicated with SHA-256 hashes, categorized by an OpenAI-compatible LLM, and imported into Firefly III — with portfolio-sync feeding market prices in alongside.">
+  </picture>
+</p>
+
 # Firefly Bridge
 
 A semi-automatic bridge between banks, brokerages, and [Firefly III](https://firefly-iii.org/).
@@ -131,3 +139,5 @@ The schedule uses a 6-field cron expression (seconds first): `0 20 13 * * *` run
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
+
+The Firefly III mark used in the banner is [`assets/firefly-iii-icon.svg`](assets/firefly-iii-icon.svg), copyright the [Firefly III](https://github.com/firefly-iii/firefly-iii) project and licensed AGPL-3.0. It is included only to identify the software this project integrates with. The institution icons on the left of the banner are generic illustrations, not the logos of any specific bank.
