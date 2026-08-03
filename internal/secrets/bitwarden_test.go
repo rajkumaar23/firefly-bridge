@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -116,6 +117,28 @@ func TestBitwardenInvalidURI(t *testing.T) {
 		if _, err := p.GetSecret(context.Background(), uri); err == nil {
 			t.Fatalf("expected error for invalid URI %q", uri)
 		}
+	}
+}
+
+func TestBitwardenLockedVaultFailsFast(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bw")
+	script := "#!/usr/bin/env bash\necho '{\"status\":\"locked\"}'\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewBitwardenProvider(context.Background(), &BitwardenConfig{BWPath: path})
+	if err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("expected locked-vault error, got %v", err)
+	}
+}
+
+func TestBitwardenMissingCLI(t *testing.T) {
+	_, err := NewBitwardenProvider(context.Background(), &BitwardenConfig{
+		BWPath: "definitely-not-a-real-binary-xyz",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not-found error, got %v", err)
 	}
 }
 

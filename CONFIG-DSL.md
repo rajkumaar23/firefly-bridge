@@ -154,7 +154,7 @@ secrets:
 
 ### `secrets.onepassword`
 
-Configures the 1Password secret provider using a Service Account token.
+Configures the 1Password secret provider using a Service Account token. The token is verified at startup with a single authenticated call, so an invalid or expired token fails fast rather than mid-sync.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -171,7 +171,7 @@ bw login                      # authenticate (email/password or API key)
 export BW_SESSION=$(bw unlock --raw)   # unlock and capture the session key
 ```
 
-Then reference `${ENV:BW_SESSION}` from the config (or let the provider pick up the ambient `BW_SESSION` automatically by omitting `session`).
+Then reference `${ENV:BW_SESSION}` from the config (or let the provider pick up the ambient `BW_SESSION` automatically by omitting `session`). The provider verifies at startup that the `bw` CLI is installed and the vault is unlocked, failing fast with an actionable message if it is missing, locked, or logged out.
 
 | Field | Type | Required | Description |
 |---|---|---|---|

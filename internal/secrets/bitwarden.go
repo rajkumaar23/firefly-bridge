@@ -42,6 +42,8 @@ var builtinBitwardenFields = map[string]bool{
 }
 
 // NewBitwardenProvider creates a new Bitwarden provider backed by the `bw` CLI.
+// It verifies the CLI is installed and the vault is unlocked so that
+// configuration problems surface at startup rather than mid-sync.
 func NewBitwardenProvider(ctx context.Context, cfg *BitwardenConfig) (*BitwardenProvider, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("bitwarden config cannot be nil")
@@ -50,6 +52,9 @@ func NewBitwardenProvider(ctx context.Context, cfg *BitwardenConfig) (*Bitwarden
 	bwPath := cfg.BWPath
 	if bwPath == "" {
 		bwPath = "bw"
+	}
+	if _, err := exec.LookPath(bwPath); err != nil {
+		return nil, fmt.Errorf("bitwarden CLI %q not found in PATH: %w (install it from https://bitwarden.com/help/cli/)", bwPath, err)
 	}
 
 	p := &BitwardenProvider{
@@ -77,7 +82,38 @@ func NewBitwardenProvider(ctx context.Context, cfg *BitwardenConfig) (*Bitwarden
 		}
 	}
 
+	if err := p.checkUnlocked(ctx); err != nil {
+		return nil, err
+	}
+
 	return p, nil
+}
+
+// checkUnlocked verifies the CLI is authenticated and the vault is unlocked,
+// producing an actionable error otherwise.
+func (p *BitwardenProvider) checkUnlocked(ctx context.Context) error {
+	out, err := p.run(ctx, "status")
+	if err != nil {
+		return fmt.Errorf("failed to query bitwarden status (is the `bw` CLI installed and logged in?): %w", err)
+	}
+
+	var status struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(out), &status); err != nil {
+		return fmt.Errorf("failed to parse bitwarden status output: %w", err)
+	}
+
+	switch status.Status {
+	case "unlocked":
+		return nil
+	case "locked":
+		return fmt.Errorf("bitwarden vault is locked: run `bw unlock` and pass its session key via secrets.bitwarden.session or the BW_SESSION environment variable")
+	case "unauthenticated":
+		return fmt.Errorf("bitwarden CLI is not logged in: run `bw login` first")
+	default:
+		return fmt.Errorf("bitwarden vault is not ready (status: %q)", status.Status)
+	}
 }
 
 // Name returns the provider identifier.

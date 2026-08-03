@@ -32,6 +32,13 @@ func NewOnePasswordProvider(ctx context.Context, token string) (*OnePasswordProv
 		return nil, fmt.Errorf("failed to create 1Password client: %w", err)
 	}
 
+	// NewClient only initializes the SDK locally; an invalid or expired token is
+	// not detected until the first secret is resolved. Make one authenticated
+	// call now so a bad token fails at startup rather than mid-sync.
+	if _, err := client.Vaults().List(ctx); err != nil {
+		return nil, fmt.Errorf("failed to authenticate with 1Password (check the service account token): %w", err)
+	}
+
 	return &OnePasswordProvider{
 		client: client,
 	}, nil
