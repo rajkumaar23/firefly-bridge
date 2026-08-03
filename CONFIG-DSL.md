@@ -23,6 +23,7 @@ This document is a complete reference for every attribute and feature available 
     - [Account Fields](#account-fields)
     - [Account Type: `regular`](#account-type-regular)
     - [Account Type: `investment`](#account-type-investment)
+- [`vendors`](#vendors)
 - [Browser Step Reference](#browser-step-reference)
   - [`navigate`](#navigate)
   - [`wait_visible`](#wait_visible)
@@ -34,6 +35,7 @@ This document is a complete reference for every attribute and feature available 
   - [`send_keys`](#send_keys)
   - [`set_value`](#set_value)
   - [`balance`](#balance)
+  - [`orders`](#orders)
   - [`transactions`](#transactions)
     - [CSV Mode](#csv-mode)
     - [Excel Mode](#excel-mode)
@@ -43,6 +45,7 @@ This document is a complete reference for every attribute and feature available 
     - [`skip_row_conditions` / `negate_if`](#skip_row_conditions--negate_if)
   - [`holdings`](#holdings)
   - [`evaluate`](#evaluate)
+  - [`skip_remaining_if`](#skip_remaining_if)
 - [Template Functions](#template-functions)
 - [Amount Parsing](#amount-parsing)
 - [Validation Rules Summary](#validation-rules-summary)
@@ -111,6 +114,12 @@ institutions:     # required, minimum 1
   - name: "..."
     login: [...]
     accounts: [...]
+
+vendors:          # optional
+  - name: "..."
+    match: "..."
+    login: [...]
+    orders: [...]
 ```
 
 | Field | Type | Required | Description |
@@ -120,6 +129,7 @@ institutions:     # required, minimum 1
 | `ai` | object | no | AI-assisted category/budget assignment |
 | `browser_exec_path` | string | yes | Absolute path to the browser executable used for automation |
 | `institutions` | array | yes (min 1) | List of financial institutions to sync |
+| `vendors` | array | no | Merchants whose order history is scraped on demand to categorize ambiguous charges |
 
 ---
 
@@ -380,9 +390,75 @@ Holdings are stored in the Firefly account notes field as a comma-separated stri
 
 ---
 
+## `vendors`
+
+Optional. All-in-one merchants produce charges whose category can't be inferred from the bank description alone — the same store might be pet supplies one week, medicine the next, household goods after that. A vendor entry teaches the bridge to log into the merchant's own website (using the same [browser steps](#browser-step-reference) as institutions), pull its recent order history, and match each new bank charge to an order by **amount + date**. A matched charge is then categorized from the order's actual contents; the item list is also written into the transaction's notes for later review.
+
+Vendor scraping is **on-demand only** — it never runs during a normal sync. Enable it per run with `-vendors all` or `-vendors "Name,Other"`. It also requires [`ai`](#ai) to be enabled, since the order contents are categorized by the model. To verify a vendor's login and orders flows without syncing anything, run `-list-orders` — it logs in, prints every scraped order, and exits.
+
+```yaml
+vendors:
+  - name: "Example Store"
+    match: "EXAMPLE ?STORE|EXMPLSTR" # regex routing bank descriptions to this vendor
+    date_window_days: 3              # charge may post up to N days from the order date
+    date_format: "2006-01-02"        # Go layout of dates returned by the orders JS
+    login:
+      - type: navigate
+        url: "https://store.example.com/account/orders"
+      # ... send_keys / click steps, same DSL as institution logins
+    orders:
+      - type: navigate
+        url: "https://store.example.com/account/orders"
+      - type: orders
+        evaluate: |
+          (() => [...document.querySelectorAll('.order-row')].map(row => ({
+            date: "...", amount: "...", items: "...",
+          })))()
+```
+
+### Vendor Fields
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes | — | Vendor name. Used in logs, the review report, and with the `-vendors` flag. |
+| `match` | string | yes | — | Regular expression, applied **case-insensitively** against each bank transaction's description, that routes the transaction to this vendor. Cover every form your statement uses. Validated at config load. |
+| `date_window_days` | integer | no | `3` | How many days a charge date may differ from the order date and still match — cards typically charge at shipment, a few days after the order. An explicit `0` means same-day only. |
+| `date_format` | string | no | _common layouts_ | Go `time.Parse` layout for the `date` strings returned by the orders JS. When omitted, common layouts are tried: `"2006-01-02"`, RFC3339, `"January 2, 2006"`, `"Jan 2, 2006"`, `"01/02/2006"`. |
+| `login` | array of [steps](#browser-step-reference) | yes (min 1) | — | Steps executed once to authenticate with the vendor. Runs in the same persistent browser profile as institutions, so a manually-completed 2FA challenge survives across runs. |
+| `orders` | array of [steps](#browser-step-reference) | yes (min 1) | — | Steps to scrape the order history. Must include at least one [`orders`](#orders) step. |
+
+### When a vendor's login can't be automated
+
+Two escalating situations, both worth recognising early:
+
+**1. Session persists, login is scriptable.** The normal case. The browser profile lives in `chromedp-data/`, so start the login flow by navigating to an authenticated page and using [`skip_remaining_if`](#skip_remaining_if) to end the flow when you're already signed in. The credential steps then only run when the session has actually expired, and any 2FA challenge you complete by hand survives to later runs.
+
+**2. Bot detection rejects the browser itself.** Some merchants front sign-in with a bot manager that fingerprints the *browser*, not just the automation. The tell is a sign-in POST that fails with **HTTP 429 or a challenge page even when you type the password by hand**, while the same credentials succeed in your normal browser on the same IP. No selector or timing change fixes this — stop tuning the flow.
+
+For those, don't log in through the browser at all. Authenticate with a **long-lived token extracted once from your own browser session** and have the `orders` step call the merchant's API directly:
+
+- Sign in normally in your own browser, open the order-history page, and copy the session/refresh token out of DevTools → **Application** → **Local Storage** (SPAs commonly cache one there).
+- Store it in your secret manager and reference it from the `orders` JavaScript — secret references are resolved **anywhere inside the JS**, so the token never sits in your config.
+- Have the JS exchange or present that token, then call the merchant's own order API. Make it `throw` on an auth failure so an expired token surfaces as a clear step error instead of an empty order list.
+
+Tokens obtained this way expire (often 30–90 days); re-extract when the step starts failing.
+
+> Merchant order APIs found this way are typically undocumented and internal. You're reading your own purchase history, but such endpoints carry no stability or terms-of-service guarantee and may change without notice.
+
+### How vendor enrichment works
+
+1. With `-vendors`, each requested vendor is logged into and its orders scraped **before** any institution runs. A vendor that fails to log in or scrape is skipped with a warning — its charges simply fall back to normal AI enrichment.
+2. For each new transaction, the description is tested against every vendor's `match` regex. Non-matching transactions are enriched exactly as before.
+3. A matching transaction is compared against that vendor's orders: same absolute amount (to the cent) and a date within `date_window_days`.
+   - **Exactly one order matches** → the model assigns category/budget from the order's item list instead of the bank description, and the items are stored in the transaction's notes. If the order carries a merchant-provided `category` that already exists in Firefly, it is used directly without a model call.
+   - **No order, or several different orders, match** → the bridge **abstains**: the transaction is uploaded without a category/budget (so a Firefly rule or you can assign it), and the charge is added to the review report.
+4. After the run, the review report is written to `-vendor-report` (default `.vendor-review.json`) listing every abstained charge with its date, amount, description, vendor, and reason. The file is rewritten each vendor run — an empty `[]` means everything matched.
+
+---
+
 ## Browser Step Reference
 
-Steps are YAML objects with a required `type` field. They are used inside `login`, `balance`, `transactions`, and `holdings` flows.
+Steps are YAML objects with a required `type` field. They are used inside `login`, `balance`, `transactions`, `holdings`, and `orders` flows.
 
 ---
 
@@ -864,6 +940,36 @@ Async functions are supported; the step awaits any returned Promise before conti
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `evaluate` | string | yes | JavaScript to evaluate. Async functions are awaited. The return value is ignored. `op://` secret references embedded in the string are resolved before evaluation. |
+
+---
+
+### `skip_remaining_if`
+
+Evaluates a JavaScript expression and, when the result is truthy, ends the current flow early — successfully, skipping every remaining step.
+
+Its main use is at the top of login flows: the browser profile persists between runs (`chromedp-data/`), so a previous session is often still valid and the credential steps would otherwise hang waiting for a login form that never appears. Land on an authenticated page first, then skip the rest of the flow unless you were bounced to the sign-in page.
+
+```yaml
+- type: navigate
+  url: "https://store.example.com/account/orders"
+- type: sleep
+  duration: "4s"
+# Still signed in → not redirected to the login page → skip the credential steps.
+- type: skip_remaining_if
+  evaluate: "!/login|signin/i.test(location.href)"
+- type: send_keys
+  selector: "#email"
+  value: "op://my-vault/example-store/username"
+# ...
+```
+
+Truthiness follows JavaScript rules: `false`, `0`, `""`, `null`/`undefined` continue the flow; everything else skips.
+
+Steps that produce results (`balance`, `transactions`, `holdings`, `orders`) still have to run for their flow to succeed, so place `skip_remaining_if` only in flows where skipping the remainder is genuinely fine — login flows, typically.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `evaluate` | string | yes | JavaScript expression to evaluate. Async functions are awaited. A truthy result skips all remaining steps in the flow; a falsy one continues normally. `op://` secret references embedded in the string are resolved before evaluation. |
 
 ---
 

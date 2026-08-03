@@ -2,6 +2,7 @@ package chromedp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -123,6 +124,13 @@ func (c *ChromeDP) RunSteps(steps []BrowserStep) (map[StepType]interface{}, erro
 
 	for _, step := range steps {
 		if err := step.Step.Execute(c, results); err != nil {
+			// A skip_remaining_if step signals that the rest of the flow is
+			// unnecessary (e.g. a login flow finding itself already signed in
+			// thanks to the persistent browser profile).
+			if errors.Is(err, ErrSkipRemaining) {
+				utils.GetLogger(c.Ctx).Debugf("skipping remaining steps after %s", step.Step.Type())
+				return results, nil
+			}
 			return nil, fmt.Errorf("error executing step %s: %w", step.Step.Type(), err)
 		}
 		time.Sleep(time.Second)

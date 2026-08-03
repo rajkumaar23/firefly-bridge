@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"github.com/rajkumaar23/firefly-bridge/internal/state"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
+	"github.com/rajkumaar23/firefly-bridge/internal/vendor"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,6 +40,9 @@ func run() int {
 	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")
 	var skipInstitutions = flag.String("skip", "", "comma-separated list of institution names to skip; all other institutions run normally")
 	var csvDebug = flag.Bool("csv-debug", false, "log every parsed CSV row with its row number to help diagnose parsing issues")
+	var vendorsFlag = flag.String("vendors", "", "scrape configured vendors' order history to categorize their charges from what was actually bought; \"all\" or a comma-separated list of vendor names, empty disables vendor scraping")
+	var vendorReportPath = flag.String("vendor-report", ".vendor-review.json", "path to write the review report of vendor charges that could not be matched to an order")
+	var listOrders = flag.Bool("list-orders", false, "log in to the configured vendors, print their scraped orders, and exit without syncing any institution; combine with -vendors to restrict which vendors run (default all)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -89,6 +94,24 @@ func run() int {
 	}
 	defer cdp.Close()
 	logger.Debug("chromedp setup complete")
+
+	// -list-orders: scrape-and-print mode for inspecting what the vendor flows
+	// return (e.g. while tuning the orders JS selectors). No institution sync.
+	if *listOrders {
+		sel := *vendorsFlag
+		if sel == "" {
+			sel = "all"
+		}
+		return listVendorOrders(logger, cdp, cfg, sel)
+	}
+
+	// On-demand vendor order scraping (-vendors): log into each requested
+	// vendor, pull its recent orders, and hand the resulting index to the
+	// categorizer so ambiguous all-in-one charges are categorized from their
+	// actual contents. Everything here is best-effort — a vendor that fails to
+	// scrape is simply left out of the index and its transactions enrich the
+	// normal way.
+	orderIndex := scrapeVendors(logger, cdp, cfg, categorizer, *vendorsFlag)
 
 	runState, err := state.Load(*statePath)
 	if err != nil {
@@ -201,6 +224,10 @@ func run() int {
 		}
 	}
 
+	if orderIndex != nil {
+		writeVendorReport(logger, orderIndex, *vendorReportPath)
+	}
+
 	if len(errs) > 0 {
 		logger.Errorf("%d error(s) occurred:", len(errs))
 		for idx, e := range errs {
@@ -209,6 +236,140 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// forEachRequestedVendor runs the login and orders flows of every vendor
+// selected by vendorsFlag ("all" or a comma-separated list of names) and calls
+// fn with the scraped orders. Failures are warnings, never run errors — a
+// vendor that could not be scraped is simply skipped. It returns how many
+// vendors were successfully scraped.
+func forEachRequestedVendor(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config.Config, vendorsFlag string, fn func(v *vendor.Vendor, orders []vendor.Order)) int {
+	all := vendorsFlag == "all"
+	wanted := make(map[string]bool)
+	if !all {
+		for _, name := range strings.Split(vendorsFlag, ",") {
+			wanted[strings.TrimSpace(name)] = true
+		}
+		for name := range wanted {
+			found := false
+			for i := range cfg.Vendors {
+				if cfg.Vendors[i].Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				logger.Warnf("-vendors names %q but no such vendor is configured", name)
+			}
+		}
+	}
+
+	processed := 0
+	for i := range cfg.Vendors {
+		v := &cfg.Vendors[i]
+		if !all && !wanted[v.Name] {
+			continue
+		}
+		vLog := logger.WithField("vendor", v.Name)
+		if err := v.Login(cdp); err != nil {
+			vLog.Warnf("failed to login, skipping vendor: %s", err.Error())
+			continue
+		}
+		vLog.Info("logged in successfully")
+		orders, err := v.GetOrders(cdp)
+		if err != nil {
+			vLog.Warnf("failed to get orders, skipping vendor: %s", err.Error())
+			continue
+		}
+		fn(v, orders)
+		processed++
+	}
+	return processed
+}
+
+// scrapeVendors logs into each requested vendor and builds an order index for
+// the categorizer. It returns nil when vendor scraping is disabled or not
+// applicable, so charges fall back to normal enrichment instead of being
+// abstained on.
+func scrapeVendors(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config.Config, categorizer *ai.Categorizer, vendorsFlag string) *vendor.Index {
+	if vendorsFlag == "" {
+		return nil
+	}
+	if categorizer == nil {
+		logger.Warn("-vendors specified but AI enrichment is disabled; skipping vendor scraping")
+		return nil
+	}
+	if len(cfg.Vendors) == 0 {
+		logger.Warn("-vendors specified but no vendors are configured")
+		return nil
+	}
+
+	index := vendor.NewIndex()
+	indexed := 0
+	forEachRequestedVendor(logger, cdp, cfg, vendorsFlag, func(v *vendor.Vendor, orders []vendor.Order) {
+		vLog := logger.WithField("vendor", v.Name)
+		if err := index.Add(v, orders); err != nil {
+			vLog.Warnf("skipping vendor: %s", err.Error())
+			return
+		}
+		vLog.Infof("scraped %d orders", len(orders))
+		indexed++
+	})
+	if indexed == 0 {
+		return nil
+	}
+
+	categorizer.UseOrderResolver(index)
+	return index
+}
+
+// listVendorOrders implements -list-orders: scrape the requested vendors and
+// print every order, then exit without syncing anything. Meant for verifying
+// login flows and tuning the orders JS selectors.
+func listVendorOrders(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config.Config, vendorsFlag string) int {
+	if len(cfg.Vendors) == 0 {
+		logger.Error("-list-orders specified but no vendors are configured")
+		return 1
+	}
+
+	processed := forEachRequestedVendor(logger, cdp, cfg, vendorsFlag, func(v *vendor.Vendor, orders []vendor.Order) {
+		vLog := logger.WithField("vendor", v.Name)
+		vLog.Infof("scraped %d orders:", len(orders))
+		for _, o := range orders {
+			line := fmt.Sprintf("  %s  %10.2f  %s", o.Date.Format(time.DateOnly), float64(o.Cents)/100, o.Items)
+			if o.Category != "" {
+				line += fmt.Sprintf("  [%s]", o.Category)
+			}
+			vLog.Info(line)
+		}
+	})
+	if processed == 0 {
+		logger.Error("no vendors could be scraped")
+		return 1
+	}
+	return 0
+}
+
+// writeVendorReport persists the abstained vendor charges for manual review.
+// It always rewrites the file — even when empty — so a stale report from a
+// previous run can't mislead.
+func writeVendorReport(logger *logrus.Logger, index *vendor.Index, path string) {
+	entries := index.Report()
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		logger.Warnf("failed to marshal vendor report: %s", err.Error())
+		return
+	}
+	// 0600: the report contains real transaction descriptions and amounts.
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		logger.Warnf("failed to write vendor report: %s", err.Error())
+		return
+	}
+	if len(entries) > 0 {
+		logger.Infof("%d vendor charge(s) could not be matched to an order — review them in %s", len(entries), path)
+	} else {
+		logger.Infof("all vendor charges matched an order; empty report written to %s", path)
+	}
 }
 
 // processInvestmentAccount handles investment account synchronization

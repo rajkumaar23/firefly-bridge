@@ -4,10 +4,10 @@ import "testing"
 
 func TestKeyword(t *testing.T) {
 	cases := map[string]string{
-		"POS PURCHASE STARBUCKS 1234": "STARBUCKS", // longest alpha token
-		"AMAZON":                      "AMAZON",
-		"12345 99":                    "12345 99", // no usable alpha token -> whole desc
-		"UPI/paytm/9876":              "paytm",
+		"POS PURCHASE COFFEEHOUSE 1234": "COFFEEHOUSE", // longest alpha token
+		"MEGASTORE":                     "MEGASTORE",
+		"12345 99":                      "12345 99", // no usable alpha token -> whole desc
+		"UPI/wallet/9876":               "wallet",
 	}
 	for in, want := range cases {
 		if got := keyword(in); got != want {

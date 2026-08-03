@@ -12,6 +12,7 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/institution"
 	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
+	"github.com/rajkumaar23/firefly-bridge/internal/vendor"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,6 +33,7 @@ type Config struct {
 	AI              *ai.Config                `yaml:"ai,omitempty"`
 	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"file"`
 	Institutions    []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
+	Vendors         []vendor.Vendor           `yaml:"vendors,omitempty" validate:"omitempty,dive"`
 }
 
 func (c *Config) Validate() error {
@@ -44,8 +46,9 @@ func (c *Config) Validate() error {
 		return nil
 	}, chromedp.BrowserStep{})
 
-	// Register custom validation for accounts
+	// Register custom validation for accounts and vendors
 	validate.RegisterStructValidation(accountStructLevelValidation, institution.Account{})
+	validate.RegisterStructValidation(vendorStructLevelValidation, vendor.Vendor{})
 
 	if err := validate.Struct(c); err != nil {
 		return err
@@ -132,6 +135,27 @@ func resolveImports(node *yaml.Node, basePath string) error {
 		}
 	}
 	return nil
+}
+
+func vendorStructLevelValidation(sl validator.StructLevel) {
+	v := sl.Current().Interface().(vendor.Vendor)
+
+	// Fail at config load, not mid-run, when the routing pattern is invalid.
+	if _, err := regexp.Compile("(?i)" + v.Match); err != nil {
+		sl.ReportError(v.Match, "match", "Match", "invalid_regex", "")
+	}
+
+	// Validate that the orders flow has at least 1 orders step
+	hasOrdersStep := false
+	for _, step := range v.OrdersFlow {
+		if step.Step.Type() == chromedp.StepGetOrders {
+			hasOrdersStep = true
+			break
+		}
+	}
+	if !hasOrdersStep {
+		sl.ReportError(v.OrdersFlow, "orders", "OrdersFlow", "must_have_orders_step", "")
+	}
 }
 
 func accountStructLevelValidation(sl validator.StructLevel) {

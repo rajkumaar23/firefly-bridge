@@ -475,3 +475,108 @@ institutions:
 
   # ── Institution 4: Loaded from an external file ───────────────────────────
   - !import "institutions/another-institution.yaml"
+
+
+# ── Vendors (optional, requires ai.enabled) ──────────────────────────────────
+# All-in-one merchants produce charges whose category can't be inferred from the
+# bank description alone — the same store might be pet supplies one week,
+# medicine the next, household goods after that. Vendors solve this by pulling
+# your order history from the merchant itself, using the same browser-step DSL
+# as institutions, then matching each bank charge to an order by amount + date
+# (within date_window_days).
+#   • One matching order  → the model categorizes from the order's actual items
+#     (the items are also written into the transaction's notes).
+#   • No / multiple match → the charge is left uncategorized and listed in the
+#     review report (-vendor-report, default .vendor-review.json).
+# Vendor scraping only runs on demand: -vendors all  or  -vendors "Name,Other".
+# To build a flow, -list-orders logs in, prints every scraped order, and exits
+# without syncing anything — iterate on your `orders` JS until it looks right.
+# 2FA tip: the browser profile persists in chromedp-data/, so complete any
+# vendor 2FA challenge once by hand — later runs reuse the session.
+vendors:
+
+  - name: "Example Store"
+    # Regex (case-insensitive) matched against a bank transaction's description
+    # to route it to this vendor. Cover every form your statement uses.
+    match: "EXAMPLE ?STORE|EXMPLSTR"
+    # date_window_days: how many days a charge may post after (or before) the
+    # order date and still match. Merchants that charge at shipment need a few
+    # days of slack. Default 3; 0 = must be the same day.
+    date_window_days: 3
+    # date_format: Go layout of the dates your `orders` JS returns. When
+    # omitted, common layouts are tried ("2006-01-02", "January 2, 2006",
+    # "Jan 2, 2006", "01/02/2006", RFC3339).
+    date_format: "2006-01-02"
+
+    login:
+      # The browser profile persists in chromedp-data/, so a previous run's
+      # session is often still valid. Land on a page that requires auth, then
+      # skip the credential steps unless you were bounced to the login page.
+      - type: navigate
+        url: "https://store.example.com/account/orders"
+      - type: sleep
+        duration: "4s"
+      - type: skip_remaining_if
+        evaluate: "!/login|signin/i.test(location.href)"
+      - type: send_keys
+        selector: "#email"
+        value: "op://my-vault/example-store/username"
+      - type: send_keys
+        selector: "#password"
+        value: "op://my-vault/example-store/password"
+      - type: click
+        selector: "button[type='submit']"
+      # Leave slack for a manually-completed 2FA prompt on the first run.
+      - type: sleep
+        duration: "15s"
+
+    orders:
+      - type: navigate
+        url: "https://store.example.com/account/orders"
+      - type: wait_visible
+        selector: ".order-row"
+      - type: sleep
+        duration: "3s"
+      # The orders step's JS must return an array of
+      #   { date: "...", amount: "...", items: "...", category: "..." }
+      # `category` is optional — a merchant-provided department name that may
+      # map directly onto a Firefly category, skipping a model call. Multiple
+      # orders steps accumulate, so you can page through order history.
+      #
+      # Prefer stable anchors (data-* attributes, visible labels) over generated
+      # CSS class names, which churn. Run -list-orders to see exactly what your
+      # JS returns; with -debug the raw payload is logged too.
+      - type: orders
+        evaluate: |
+          (() => {
+            return [...document.querySelectorAll('.order-row')].map(row => ({
+              date: row.querySelector('[data-order-date]')?.textContent.trim() ?? '',
+              amount: row.querySelector('[data-order-total]')?.textContent.trim() ?? '',
+              items: [...row.querySelectorAll('[data-item-name]')]
+                .map(el => el.textContent.trim()).filter(Boolean).join(', '),
+            })).filter(o => o.date && o.amount);
+          })()
+
+      # ── Alternative: call the merchant's own API ────────────────────────────
+      # Many order pages are SPAs backed by a JSON/GraphQL API. Calling it from
+      # the page is far more robust than scraping rendered markup, and secret
+      # references (op:// , bw://) are resolved anywhere inside the JS — so an
+      # API token never has to sit in this file:
+      #
+      # - type: orders
+      #   evaluate: |
+      #     (async () => {
+      #       const resp = await fetch('https://store.example.com/api/orders', {
+      #         headers: { Authorization: 'Bearer op://my-vault/example-store/api-token' },
+      #       });
+      #       if (!resp.ok) throw new Error('orders API returned HTTP ' + resp.status);
+      #       const data = await resp.json();
+      #       return (data.orders ?? []).map(o => ({
+      #         date: String(o.placedAt ?? '').split('T')[0],
+      #         amount: String(o.total ?? ''),
+      #         items: (o.lineItems ?? []).map(li => li.name).filter(Boolean).join(', '),
+      #       })).filter(o => o.date && o.amount);
+      #     })()
+      #
+      # Throwing inside the JS surfaces as a clear step error, which beats
+      # silently returning an empty list when auth has expired.

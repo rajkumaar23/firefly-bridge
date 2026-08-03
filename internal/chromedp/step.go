@@ -1,6 +1,8 @@
 package chromedp
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -28,8 +30,15 @@ const (
 	StepGetBalance      StepType = "balance"
 	StepGetTransactions StepType = "transactions"
 	StepGetHoldings     StepType = "holdings"
+	StepGetOrders       StepType = "orders"
 	StepEvaluate        StepType = "evaluate"
+	StepSkipRemainingIf StepType = "skip_remaining_if"
 )
+
+// ErrSkipRemaining is returned by a skip_remaining_if step whose condition is
+// truthy. RunSteps treats it as a successful early exit from the flow, not an
+// error.
+var ErrSkipRemaining = errors.New("skip remaining steps")
 
 type BrowserStep struct {
 	Step Step
@@ -71,8 +80,12 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &GetTransactionsStep{}
 	case StepGetHoldings:
 		step = &HoldingsStep{}
+	case StepGetOrders:
+		step = &OrdersStep{}
 	case StepEvaluate:
 		step = &EvaluateStep{}
+	case StepSkipRemainingIf:
+		step = &SkipRemainingIfStep{}
 	default:
 		return fmt.Errorf("unknown browser step type: %s", typeHolder.Type)
 	}
@@ -347,6 +360,57 @@ func parseHoldingsFromJS(jsResult interface{}) (*firefly.FireflyHoldings, error)
 	return &holdings, nil
 }
 
+// Order is a raw order row scraped from a vendor page by an OrdersStep. Dates
+// and amounts are kept as strings here; internal/vendor parses them (this type
+// lives in this package so that vendor can import chromedp without a cycle).
+type Order struct {
+	Date     string `json:"date"`
+	Amount   string `json:"amount"`
+	Items    string `json:"items"`
+	Category string `json:"category"`
+}
+
+// OrdersStep scrapes vendor orders from the current page by evaluating a JS
+// snippet that returns an array of {date, amount, items, category?} objects.
+// Multiple orders steps in one flow (e.g. one per order-history page)
+// accumulate their results.
+type OrdersStep struct {
+	Evaluate string `yaml:"evaluate" validate:"required"`
+}
+
+func (s OrdersStep) Type() StepType {
+	return StepGetOrders
+}
+
+func (s OrdersStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
+	if err != nil {
+		return fmt.Errorf("failed to resolve secret refs: %w", err)
+	}
+
+	// Capture the raw JSON first so the exact payload can be logged when the
+	// scrape returns nothing useful — vendor pages change often and this is
+	// the fastest way to see what the JS actually produced.
+	var raw json.RawMessage
+	if err := chromedp.Run(c.Ctx, chromedp.Evaluate(eval, &raw, awaitPromise)); err != nil {
+		return fmt.Errorf("failed to evaluate orders JavaScript: %w", err)
+	}
+	utils.GetLogger(c.Ctx).Debugf("orders step returned: %s", truncate(string(raw), 2000))
+
+	var orders []Order
+	if err := json.Unmarshal(raw, &orders); err != nil {
+		return fmt.Errorf("orders JavaScript must return an array of {date, amount, items}, got %s: %w",
+			truncate(string(raw), 200), err)
+	}
+
+	if existing, ok := results[s.Type()].([]Order); ok {
+		results[s.Type()] = append(existing, orders...)
+	} else {
+		results[s.Type()] = orders
+	}
+	return nil
+}
+
 // EvaluateStep runs arbitrary JavaScript on the page and discards the result.
 // Use this for side-effectful JS (e.g. triggering a download, clicking via JS).
 type EvaluateStep struct {
@@ -369,6 +433,62 @@ func (s EvaluateStep) Execute(c *ChromeDP, results map[StepType]interface{}) err
 		return err
 	}
 	return nil
+}
+
+// SkipRemainingIfStep evaluates a JS expression and, when the result is
+// truthy, ends the current flow early (successfully). Its main use is at the
+// top of login flows: the browser profile persists between runs, so a session
+// is often still valid and the credential steps would otherwise hang waiting
+// for a login form that never appears.
+type SkipRemainingIfStep struct {
+	Evaluate string `yaml:"evaluate" validate:"required"`
+}
+
+func (s SkipRemainingIfStep) Type() StepType {
+	return StepSkipRemainingIf
+}
+
+func (s SkipRemainingIfStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
+	if err != nil {
+		return fmt.Errorf("failed to resolve secret refs: %w", err)
+	}
+
+	var result interface{}
+	if err := chromedp.Run(c.Ctx, chromedp.Evaluate(eval, &result, awaitPromise)); err != nil {
+		return fmt.Errorf("failed to evaluate skip_remaining_if JavaScript: %w", err)
+	}
+
+	if isTruthy(result) {
+		return ErrSkipRemaining
+	}
+	return nil
+}
+
+// truncate shortens s for logging, marking that it was cut.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "… (truncated)"
+}
+
+// isTruthy applies JavaScript-like truthiness to an evaluated result.
+func isTruthy(v interface{}) bool {
+	switch val := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return val
+	case string:
+		return val != ""
+	case float64:
+		return val != 0
+	case int:
+		return val != 0
+	default:
+		return true
+	}
 }
 
 type (
