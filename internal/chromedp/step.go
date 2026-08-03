@@ -9,7 +9,6 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/csv"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
-	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"gopkg.in/yaml.v3"
 )
@@ -265,7 +264,7 @@ func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) erro
 	if s.Selector != "" {
 		action = chromedp.Text(s.Selector, &result)
 	} else if s.Evaluate != "" {
-		eval, err := secrets.ResolveRefs(c.Ctx, s.Evaluate, c.secretResolver)
+		eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
 		if err != nil {
 			return fmt.Errorf("failed to resolve secret refs: %w", err)
 		}
@@ -360,7 +359,7 @@ func (s EvaluateStep) Type() StepType {
 
 func (s EvaluateStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 	logger := utils.GetLogger(c.Ctx)
-	eval, err := secrets.ResolveRefs(c.Ctx, s.Evaluate, c.secretResolver)
+	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
 	if err != nil {
 		return fmt.Errorf("failed to resolve secret refs: %w", err)
 	}
@@ -403,7 +402,7 @@ func (s GetTransactionsStep) Execute(c *ChromeDP, results map[StepType]interface
 	var err error
 	if s.Excel != nil {
 		var password string
-		password, err = secrets.ResolveRefs(c.Ctx, s.Excel.Password, c.secretResolver)
+		password, err = c.secretResolver.ResolveRefs(c.Ctx, s.Excel.Password)
 		if err != nil {
 			return fmt.Errorf("failed to resolve excel password: %w", err)
 		}

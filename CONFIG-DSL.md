@@ -13,6 +13,7 @@ This document is a complete reference for every attribute and feature available 
 - [`firefly`](#firefly)
 - [`secrets`](#secrets)
   - [`secrets.onepassword`](#secretsonepassword)
+  - [`secrets.bitwarden`](#secretsbitwarden)
   - [Secret References in Values](#secret-references-in-values)
 - [`ai`](#ai)
 - [`browser_exec_path`](#browser_exec_path)
@@ -96,6 +97,8 @@ firefly:          # required
 secrets:          # optional
   onepassword:
     token: "..."
+  bitwarden:
+    session: "..."
 
 ai:               # optional
   enabled: true
@@ -139,12 +142,14 @@ firefly:
 
 ## `secrets`
 
-Optional configuration for secret providers. When configured, `value` fields in [`send_keys`](#send_keys) and [`set_value`](#set_value) steps can reference secrets by URI instead of hardcoding credentials.
+Optional configuration for secret providers. When configured, `value` fields in [`send_keys`](#send_keys) and [`set_value`](#set_value) steps can reference secrets by URI instead of hardcoding credentials. You can configure either or both providers; each is identified by its URI scheme (`op://` for 1Password, `bw://` for Bitwarden).
 
 ```yaml
 secrets:
   onepassword:
     token: "ops_..."
+  bitwarden:
+    session: "${ENV:BW_SESSION}"
 ```
 
 ### `secrets.onepassword`
@@ -154,6 +159,26 @@ Configures the 1Password secret provider using a Service Account token.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `token` | string | yes | 1Password Service Account token (create one in **1Password → Developer → Service Accounts**) |
+
+### `secrets.bitwarden`
+
+Configures the Bitwarden Password Manager provider. Because Bitwarden's Go SDK only covers Secrets Manager, firefly-bridge reads structured login items (username/password/custom fields) through the official [`bw` CLI](https://bitwarden.com/help/cli/) — so the CLI must be installed and its vault **unlocked** before a sync.
+
+**One-time setup:**
+
+```bash
+bw login                      # authenticate (email/password or API key)
+export BW_SESSION=$(bw unlock --raw)   # unlock and capture the session key
+```
+
+Then reference `${ENV:BW_SESSION}` from the config (or let the provider pick up the ambient `BW_SESSION` automatically by omitting `session`).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `session` | string | no | Vault unlock key from `bw unlock`. When omitted, the ambient `BW_SESSION` environment variable is used. Supports `${ENV:...}` expansion. |
+| `server_url` | string | no | Points the CLI at a non-default server — Bitwarden EU (`https://vault.bitwarden.eu`), a self-hosted instance, or Vaultwarden. Defaults to Bitwarden US cloud. Applied at startup via `bw config server`; ignored if the CLI is already logged in to a server. |
+| `appdata_dir` | string | no | Overrides the CLI data directory (`BITWARDENCLI_APPDATA_DIR`) to isolate firefly-bridge's Bitwarden state from your interactive `bw` sessions. |
+| `bw_path` | string | no | Path to the `bw` binary. Defaults to `bw` on `PATH`. |
 
 ### Secret References in Values
 
@@ -169,7 +194,7 @@ Once a secret provider is configured, secrets can be referenced in two ways depe
 
 If the value does not contain `://`, it is used as a literal string. Secret resolution happens before template parsing, so a value cannot be both a secret reference and a template expression.
 
-**Inline reference** — `evaluate` fields in `balance` and `evaluate` steps support `op://` URIs embedded anywhere inside a larger string (e.g., a JavaScript snippet). Each `op://...` reference is resolved independently, and the surrounding text is left untouched:
+**Inline reference** — `evaluate` fields in `balance` and `evaluate` steps support `op://` and `bw://` URIs embedded anywhere inside a larger string (e.g., a JavaScript snippet). Each reference is resolved independently, and the surrounding text is left untouched:
 
 ```yaml
 - type: evaluate
@@ -177,7 +202,7 @@ If the value does not contain `://`, it is used as a literal string. Secret reso
     fetch('https://api.example.com/token', {
       body: JSON.stringify({
         username: 'op://Vault/Item/username',
-        password: 'op://Vault/Item/password',
+        password: 'bw://example-bank/password',
       }),
     })
 ```
@@ -187,6 +212,20 @@ If the value does not contain `://`, it is used as a literal string. Secret reso
 - `vault` — name or UUID of the 1Password vault
 - `item` — name or UUID of the item
 - `field` — name of the field within the item (e.g., `username`, `password`)
+
+**Bitwarden URI format:** `bw://item/field`
+
+- `item` — name (matched by the CLI's search) or ID of the vault item
+- `field` — a built-in login field (`username`, `password`, `totp`, `notes`, `uri`) or the name of a custom field on the item (matched case-insensitively)
+
+```yaml
+- type: send_keys
+  selector: "#username"
+  value: "bw://example-bank/username"
+- type: send_keys
+  selector: "#password"
+  value: "bw://example-bank/password"
+```
 
 ---
 
@@ -608,7 +647,7 @@ Multiple `transactions` steps in a single flow are supported — their results a
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `worksheet` | integer | yes | 1-based index of the worksheet to parse (1 = first sheet, 2 = second, etc.). |
-| `password` | string | no | Password to unlock a password-protected Excel file. Supports inline `op://` secret references. |
+| `password` | string | no | Password to unlock a password-protected Excel file. Supports inline `op://` and `bw://` secret references. |
 | `options` | object | no | Parsing options. See [`options`](#options). |
 | `fields` | object | yes | Column mapping. See [`fields`](#fields). |
 
@@ -951,6 +990,7 @@ The config is fully validated on load. Errors are reported with field paths.
 | `match_condition.operation` | Required, must be one of: `equals`, `contains`, `starts_with`, `ends_with`, `empty`, `not_empty` |
 | `match_condition.value` | Required when `operation` is `equals`, `contains`, `starts_with`, or `ends_with` |
 | `secrets.onepassword.token` | Required when onepassword block is present |
+| `secrets.bitwarden` | All fields optional; requires the `bw` CLI installed and its vault unlocked |
 
 ---
 

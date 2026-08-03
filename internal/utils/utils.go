@@ -27,7 +27,11 @@ func isTemplateString(s string) bool {
 
 // SecretResolver interface for resolving secret references
 type SecretResolver interface {
+	// Resolve treats the whole value as a single secret reference (or a literal).
 	Resolve(ctx context.Context, value string) (string, error)
+	// ResolveRefs replaces secret references embedded anywhere inside a larger
+	// string, leaving surrounding text untouched.
+	ResolveRefs(ctx context.Context, s string) (string, error)
 }
 
 // ParseTemplate parses a text template with the predefined FuncMap and returns the resulting string.

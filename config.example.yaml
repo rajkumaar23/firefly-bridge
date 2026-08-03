@@ -1,7 +1,8 @@
 # config.example.yaml — Comprehensive reference showing all DSL options
 #
 # Environment variables can be referenced anywhere in values: ${ENV:VAR_NAME}
-# Secret references (requires secrets.onepassword): op://vault/item/field
+# Secret references: op://vault/item/field (requires secrets.onepassword)
+#                    bw://item/field        (requires secrets.bitwarden)
 # Template functions in send_keys / set_value values:
 #   {{ Today "format" }}           — current date
 #   {{ SubtractDays N "format" }}  — date N days in the past
@@ -11,12 +12,22 @@ firefly:
   host: "${ENV:FIREFLY_HOST}"   # valid HTTP/HTTPS URL; or literal: "https://firefly.example.com"
   token: "${ENV:FIREFLY_TOKEN}" # JWT Personal Access Token from Firefly → Profile → OAuth
 
-# ── Secret provider (optional) ───────────────────────────────────────────────
-# When configured, any send_keys / set_value `value` may use op://vault/item/field
-# instead of a hardcoded string.
+# ── Secret providers (optional) ──────────────────────────────────────────────
+# When configured, any send_keys / set_value `value` may reference a secret by
+# URI instead of hardcoding it. Configure either or both providers; each is
+# selected by its URI scheme (op:// → 1Password, bw:// → Bitwarden).
 secrets:
   onepassword:
     token: "${ENV:OP_SERVICE_ACCOUNT_TOKEN}" # or literal: "ops_your_service_account_token"
+
+  # Bitwarden Password Manager, read via the `bw` CLI (must be installed).
+  # One-time setup:  bw login  &&  export BW_SESSION=$(bw unlock --raw)
+  # Reference items as bw://item/field, e.g. bw://example-bank/username.
+  bitwarden:
+    session: "${ENV:BW_SESSION}"    # unlock key from `bw unlock`; omit to use ambient BW_SESSION
+    # server_url: "https://vault.bitwarden.eu"  # optional: EU cloud / self-hosted / Vaultwarden
+    # appdata_dir: "/data/bw"                    # optional: isolate the CLI's data directory
+    # bw_path: "/usr/local/bin/bw"               # optional: path to the bw binary (default: bw on PATH)
 
 # ── AI categorization (optional) ─────────────────────────────────────────────
 # When enabled, each new transaction is assigned a category and/or budget before
