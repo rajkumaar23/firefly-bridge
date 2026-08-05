@@ -360,6 +360,14 @@ func parseHoldingsFromJS(jsResult interface{}) (*firefly.FireflyHoldings, error)
 	return &holdings, nil
 }
 
+// OrderLineItem is a single priced line of an order. Supplying these lets a
+// charge be uploaded as a Firefly split transaction when its items fall into
+// different categories.
+type OrderLineItem struct {
+	Name   string `json:"name"`
+	Amount string `json:"amount"`
+}
+
 // Order is a raw order row scraped from a vendor page by an OrdersStep. Dates
 // and amounts are kept as strings here; internal/vendor parses them (this type
 // lives in this package so that vendor can import chromedp without a cycle).
@@ -368,6 +376,10 @@ type Order struct {
 	Amount   string `json:"amount"`
 	Items    string `json:"items"`
 	Category string `json:"category"`
+
+	// LineItems is optional. When present with two or more priced entries,
+	// the charge can be split per category instead of categorized as a whole.
+	LineItems []OrderLineItem `json:"line_items"`
 }
 
 // OrdersStep scrapes vendor orders from the current page by evaluating a JS

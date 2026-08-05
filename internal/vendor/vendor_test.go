@@ -1,10 +1,12 @@
 package vendor
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/ai"
+	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 )
 
 func date(s string) time.Time {
@@ -66,6 +68,59 @@ func TestParseDate(t *testing.T) {
 	}
 }
 
+func TestParseOrderLineItems(t *testing.T) {
+	got, err := parseOrder(chromedp.Order{
+		Date:   "2026-07-29",
+		Amount: "$199.95",
+		LineItems: []chromedp.OrderLineItem{
+			{Name: "Dog food", Amount: "$142.37"},
+			{Name: "  ", Amount: "1.00"},    // nameless line: ignored entirely
+			{Name: "Gift wrap", Amount: ""}, // unpriced: named but can't be split on
+			{Name: "Vitamins", Amount: "38.91"},
+		},
+	}, defaultDateLayouts)
+	if err != nil {
+		t.Fatalf("parseOrder: %v", err)
+	}
+
+	if got.Cents != 19995 {
+		t.Errorf("total = %d, want 19995", got.Cents)
+	}
+	// Only priced lines can form splits.
+	if len(got.LineItems) != 2 {
+		t.Fatalf("expected 2 priced lines, got %+v", got.LineItems)
+	}
+	if got.LineItems[0].Name != "Dog food" || got.LineItems[0].Cents != 14237 {
+		t.Errorf("unexpected first line: %+v", got.LineItems[0])
+	}
+	// The summary still names every usable line, priced or not.
+	if got.Items != "Dog food, Gift wrap, Vitamins" {
+		t.Errorf("items summary = %q", got.Items)
+	}
+}
+
+func TestParseOrderKeepsExplicitSummary(t *testing.T) {
+	got, err := parseOrder(chromedp.Order{
+		Date: "2026-07-29", Amount: "10.00", Items: "Weekly shop",
+		LineItems: []chromedp.OrderLineItem{{Name: "Milk", Amount: "10.00"}},
+	}, defaultDateLayouts)
+	if err != nil {
+		t.Fatalf("parseOrder: %v", err)
+	}
+	if got.Items != "Weekly shop" {
+		t.Errorf("explicit items should win, got %q", got.Items)
+	}
+}
+
+func TestParseOrderRejectsUnusableRows(t *testing.T) {
+	if _, err := parseOrder(chromedp.Order{Date: "nope", Amount: "10.00"}, defaultDateLayouts); err == nil {
+		t.Error("bad date should be rejected")
+	}
+	if _, err := parseOrder(chromedp.Order{Date: "2026-07-29", Amount: ""}, defaultDateLayouts); err == nil {
+		t.Error("missing amount should be rejected")
+	}
+}
+
 func newTestIndex(t *testing.T, orders []Order, windowDays *int) *Index {
 	t.Helper()
 	idx := NewIndex()
@@ -82,8 +137,8 @@ func TestResolveNotAVendor(t *testing.T) {
 	if m.State != ai.MatchNotAVendor {
 		t.Errorf("expected NotAVendor, got %+v", m)
 	}
-	if len(idx.Report()) != 0 {
-		t.Errorf("NotAVendor must not produce a report entry, got %d", len(idx.Report()))
+	if m.Vendor != "" || m.Reason != "" {
+		t.Errorf("NotAVendor should carry no vendor or reason, got %+v", m)
 	}
 }
 
@@ -103,6 +158,28 @@ func TestResolveSingleMatch(t *testing.T) {
 	}
 }
 
+// Priced lines must reach the categorizer, which needs them to build splits.
+func TestResolveCarriesLineItems(t *testing.T) {
+	idx := newTestIndex(t, []Order{{
+		Date: date("2026-07-14"), Cents: 4567, Items: "Dog food, vitamins",
+		LineItems: []LineItem{
+			{Name: "Dog food", Cents: 3300},
+			{Name: "Vitamins", Cents: 1000},
+		},
+	}}, nil)
+
+	m := idx.Resolve("MEGASTORE.COM", "45.67", date("2026-07-15"))
+	if m.State != ai.MatchResolved {
+		t.Fatalf("expected Resolved, got %+v", m)
+	}
+	if len(m.LineItems) != 2 {
+		t.Fatalf("expected 2 line items on the match, got %+v", m.LineItems)
+	}
+	if m.LineItems[0].Name != "Dog food" || m.LineItems[0].Cents != 3300 {
+		t.Errorf("unexpected line item: %+v", m.LineItems[0])
+	}
+}
+
 func TestResolveNoMatchAbstains(t *testing.T) {
 	idx := newTestIndex(t, []Order{
 		{Date: date("2026-07-14"), Cents: 4567, Items: "Dog food"},
@@ -112,12 +189,12 @@ func TestResolveNoMatchAbstains(t *testing.T) {
 	if m.State != ai.MatchUnresolved {
 		t.Fatalf("expected Unresolved, got %+v", m)
 	}
-	report := idx.Report()
-	if len(report) != 1 {
-		t.Fatalf("expected 1 report entry, got %d", len(report))
+	// The reason is logged per transaction, so it must say what went wrong.
+	if m.Vendor != "MegaStore" {
+		t.Errorf("abstention should name the vendor, got %q", m.Vendor)
 	}
-	if report[0].Vendor != "MegaStore" || report[0].Description != "MEGASTORE.COM" {
-		t.Errorf("unexpected report entry: %+v", report[0])
+	if !strings.Contains(m.Reason, "99.99") {
+		t.Errorf("abstention reason should mention the unmatched amount, got %q", m.Reason)
 	}
 }
 

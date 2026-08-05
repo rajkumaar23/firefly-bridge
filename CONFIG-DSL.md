@@ -267,6 +267,7 @@ ai:
 | `budgets` | bool | no | `false` | Let the model assign a budget. |
 | `overwrite_existing` | bool | no | `false` | Enrich even when the transaction already has a category/budget (e.g. a noisy label from the source CSV), re-mapping it onto Firefly's taxonomy. An existing value is only ever replaced with a better one that exists in Firefly — never blanked out. |
 | `always_ask_model` | bool | no | `false` | Disable the reuse-first shortcut so the model is consulted for every wanted field even when similar past transactions agree. The historical values are still passed to the model as few-shot context. Enable when you don't trust historical labels; note it bypasses the "mirror existing rule assignments" behavior. |
+| `split_orders` | bool | no | `true` | When a matched vendor order's `line_items` fall into different categories, upload the charge as a Firefly **split transaction** with one split per category. Set to `false` to categorize such charges as a single transaction. Only ever applies to vendors whose [`orders`](#orders) step emits `line_items`. |
 | `max_examples` | int | no | `5` | How many similar past transactions are used as reuse precedent and few-shot context. |
 | `timeout_seconds` | int | no | `30` | Per-request timeout for the chat endpoint. |
 
@@ -450,9 +451,9 @@ Tokens obtained this way expire (often 30–90 days); re-extract when the step s
 1. With `-vendors`, each requested vendor is logged into and its orders scraped **before** any institution runs. A vendor that fails to log in or scrape is skipped with a warning — its charges simply fall back to normal AI enrichment.
 2. For each new transaction, the description is tested against every vendor's `match` regex. Non-matching transactions are enriched exactly as before.
 3. A matching transaction is compared against that vendor's orders: same absolute amount (to the cent) and a date within `date_window_days`.
-   - **Exactly one order matches** → the model assigns category/budget from the order's item list instead of the bank description, and the items are stored in the transaction's notes. If the order carries a merchant-provided `category` that already exists in Firefly, it is used directly without a model call.
+   - **Exactly one order matches** → the model assigns category/budget from the order's item list instead of the bank description, and the items are stored in the transaction's notes. If the order carries a merchant-provided `category` that already exists in Firefly, it is used directly without a model call. When the order supplies `line_items` spanning several categories, the charge is uploaded as a [split transaction](#splitting-an-order-across-categories) instead.
    - **No order, or several different orders, match** → the bridge **abstains**: the transaction is uploaded without a category/budget (so a Firefly rule or you can assign it), and the charge is added to the review report.
-4. After the run, the review report is written to `-vendor-report` (default `.vendor-review.json`) listing every abstained charge with its date, amount, description, vendor, and reason. The file is rewritten each vendor run — an empty `[]` means everything matched.
+4. Every abstained charge is logged as it happens, with the vendor and the reason, e.g. `abstaining on "MEGASTORE.COM" (Example Store): no order of 45.67 within 3 day(s)`.
 
 ---
 
@@ -902,6 +903,53 @@ Evaluates a JavaScript expression in the browser that returns an object mapping 
 - Values must be numeric (`number` type). Integer, float64, or int64 are all accepted.
 
 Multiple `holdings` steps in a single flow are supported — their results are **merged** into a single holdings map. This is useful when holdings are spread across multiple sections of a page.
+
+---
+
+### `orders`
+
+Retrieves a [vendor's](#vendors) order history by evaluating JavaScript that returns an **array of order objects**. Used only inside a vendor's `orders` flow, which must contain at least one such step. Async functions are awaited, and `op://` / `bw://` secret references embedded in the JavaScript are resolved before evaluation — so an API token can be used without ever appearing in your config.
+
+```yaml
+- type: orders
+  evaluate: |
+    (() => [...document.querySelectorAll('.order-row')].map(row => ({
+      date: "2026-07-29",
+      amount: "199.95",
+      items: "Dog food, vitamins",
+      line_items: [
+        { name: "Dog food", amount: "142.37" },
+        { name: "Vitamins", amount: "38.91" },
+      ],
+    })))()
+```
+
+Each object supports these keys:
+
+| Key | Required | Description |
+|---|---|---|
+| `date` | yes | Order date, parsed with the vendor's `date_format` (or common layouts when unset). |
+| `amount` | yes | Order total. Currency symbols, thousands separators and a leading `-` are tolerated; the value is compared on its absolute value. |
+| `items` | no | Human-readable item summary. Used as the description the model categorizes on, and written into the transaction's notes. Derived from `line_items` names when omitted. |
+| `category` | no | Merchant-provided category. If it matches an existing Firefly category it is applied directly, skipping a model call. |
+| `line_items` | no | Array of `{ name, amount }`. Enables **split transactions** — see below. |
+
+Multiple `orders` steps in one flow **accumulate**, so you can page through order history. Rows whose date or amount can't be parsed are skipped with a warning rather than failing the scrape. Run [`-list-orders`](README.md) to print exactly what your JavaScript returned; with `-debug` the raw JSON payload is logged too. Returning anything other than an array of these objects fails the step with the offending payload in the error.
+
+#### Splitting an order across categories
+
+One order often spans several categories — pet supplies and medicine in the same basket. Supplying `line_items` lets the bridge upload that charge as a Firefly **split transaction** instead of forcing one category onto the whole thing:
+
+1. The model is asked to categorize **each line** in a single call (lines are numbered, so it echoes indices rather than long names — this keeps the response small for local models).
+2. Lines are grouped by category. If they all land in the same one, it's not a split — the transaction is simply labelled with that category.
+3. Otherwise each group becomes a split. Group amounts are scaled **proportionally** to the amount actually billed, so tax, fees and discounts are distributed fairly and the splits always sum to the charge exactly.
+4. Every split inherits the original charge's date, accounts, tags, budget and `internal_reference`, so deduplication still recognises the group on later runs. The group's title is the original bank description; each split is described by its own items.
+
+Lines the model can't categorize aren't dropped — their value is absorbed proportionally into the categorized splits. Splitting is skipped (and the charge categorized as a whole) when fewer than two lines carry a usable amount, or when a share would round to zero. Turn it off entirely with [`ai.split_orders: false`](#ai).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `evaluate` | string | yes | JavaScript returning an array of order objects. Async functions are awaited. `op://` / `bw://` secret references embedded in the string are resolved before evaluation. |
 
 ---
 

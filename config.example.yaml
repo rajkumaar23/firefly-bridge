@@ -51,6 +51,7 @@ ai:
   budgets: false                              # let the model assign budgets
   overwrite_existing: false                   # re-map noisy bank labels onto Firefly's taxonomy; never blanks a value, only replaces it with a better existing one
   always_ask_model: false                     # disable reuse-first: consult the model even when similar past transactions agree (they're still passed as examples)
+  split_orders: true                          # when a vendor order's line_items span several categories, upload it as a Firefly split transaction (default true; only applies to vendors that emit line_items)
   max_examples: 5                             # similar past transactions used as context (default 5)
   timeout_seconds: 30                         # per-request timeout (default 30)
 
@@ -486,8 +487,8 @@ institutions:
 # (within date_window_days).
 #   • One matching order  → the model categorizes from the order's actual items
 #     (the items are also written into the transaction's notes).
-#   • No / multiple match → the charge is left uncategorized and listed in the
-#     review report (-vendor-report, default .vendor-review.json).
+#   • No / multiple match → the charge is left uncategorized, and the reason is
+#     logged so you can assign it in Firefly yourself.
 # Vendor scraping only runs on demand: -vendors all  or  -vendors "Name,Other".
 # To build a flow, -list-orders logs in, prints every scraped order, and exits
 # without syncing anything — iterate on your `orders` JS until it looks right.
@@ -538,23 +539,37 @@ vendors:
       - type: sleep
         duration: "3s"
       # The orders step's JS must return an array of
-      #   { date: "...", amount: "...", items: "...", category: "..." }
+      #   { date: "...", amount: "...", items: "...", category: "...",
+      #     line_items: [{ name: "...", amount: "..." }] }
       # `category` is optional — a merchant-provided department name that may
-      # map directly onto a Firefly category, skipping a model call. Multiple
-      # orders steps accumulate, so you can page through order history.
+      # map directly onto a Firefly category, skipping a model call.
       #
+      # `line_items` is optional but powerful: when a single order contains
+      # items from different categories (pet supplies AND medicine), the charge
+      # is uploaded as a Firefly SPLIT TRANSACTION with one split per category.
+      # Line amounts are scaled proportionally so the splits always sum to the
+      # amount actually billed — tax and fees included. Requires ai.split_orders
+      # (default true); omit line_items to categorize each charge as a whole.
+      #
+      # Multiple orders steps accumulate, so you can page through order history.
       # Prefer stable anchors (data-* attributes, visible labels) over generated
       # CSS class names, which churn. Run -list-orders to see exactly what your
       # JS returns; with -debug the raw payload is logged too.
       - type: orders
         evaluate: |
           (() => {
-            return [...document.querySelectorAll('.order-row')].map(row => ({
-              date: row.querySelector('[data-order-date]')?.textContent.trim() ?? '',
-              amount: row.querySelector('[data-order-total]')?.textContent.trim() ?? '',
-              items: [...row.querySelectorAll('[data-item-name]')]
-                .map(el => el.textContent.trim()).filter(Boolean).join(', '),
-            })).filter(o => o.date && o.amount);
+            return [...document.querySelectorAll('.order-row')].map(row => {
+              const lines = [...row.querySelectorAll('[data-item]')].map(el => ({
+                name: el.querySelector('[data-item-name]')?.textContent.trim() ?? '',
+                amount: el.querySelector('[data-item-price]')?.textContent.trim() ?? '',
+              })).filter(li => li.name);
+              return {
+                date: row.querySelector('[data-order-date]')?.textContent.trim() ?? '',
+                amount: row.querySelector('[data-order-total]')?.textContent.trim() ?? '',
+                items: lines.map(li => li.name).join(', '),
+                line_items: lines,
+              };
+            }).filter(o => o.date && o.amount);
           })()
 
       # ── Alternative: call the merchant's own API ────────────────────────────

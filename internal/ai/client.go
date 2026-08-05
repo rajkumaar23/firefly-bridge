@@ -58,8 +58,19 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
+// defaultMaxTokens bounds a single-label reply. Per-item calls need more and
+// pass their own budget via completeWithTokens.
+const defaultMaxTokens = 120
+
 // complete sends a system+user prompt and returns the assistant's raw text.
 func (c *chatClient) complete(ctx context.Context, system, user string) (string, error) {
+	return c.completeWithTokens(ctx, system, user, defaultMaxTokens)
+}
+
+// completeWithTokens is complete with an explicit response budget. Too small a
+// budget truncates the JSON mid-object and the reply fails to parse, so callers
+// that ask for one answer per line must size this to the number of lines.
+func (c *chatClient) completeWithTokens(ctx context.Context, system, user string, maxTokens int) (string, error) {
 	reqBody := chatRequest{
 		Model: c.model,
 		Messages: []chatMessage{
@@ -67,7 +78,7 @@ func (c *chatClient) complete(ctx context.Context, system, user string) (string,
 			{Role: "user", Content: user},
 		},
 		Temperature:    0, // deterministic classification
-		MaxTokens:      120,
+		MaxTokens:      maxTokens,
 		ResponseFormat: &responseFormat{Type: "json_object"},
 	}
 	payload, err := json.Marshal(reqBody)

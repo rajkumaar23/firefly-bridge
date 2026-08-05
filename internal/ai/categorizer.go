@@ -78,14 +78,18 @@ func New(ctx context.Context, cfg *Config, ff *firefly.ClientWithResponses, apiK
 	return c, nil
 }
 
-// Enrich populates the category and/or budget on txn in place. Any failure is
-// returned so the caller can log it, but callers should treat enrichment as
-// best-effort and still upload the transaction on error.
-func (c *Categorizer) Enrich(ctx context.Context, txn *firefly.TransactionSplitStore) error {
+// Enrich populates the category and/or budget on txn in place and returns the
+// splits to upload. That is normally txn itself as a single split; when a
+// matched vendor order's items fall into different categories it is one split
+// per category, together forming a Firefly split transaction.
+//
+// Any failure is returned so the caller can log it, but callers should treat
+// enrichment as best-effort and still upload the transaction on error.
+func (c *Categorizer) Enrich(ctx context.Context, txn *firefly.TransactionSplitStore) ([]firefly.TransactionSplitStore, error) {
 	wantCategory := c.cfg.Categories && (c.cfg.OverwriteExisting || isEmpty(txn.CategoryName))
 	wantBudget := c.cfg.Budgets && (c.cfg.OverwriteExisting || isEmpty(txn.BudgetName))
 	if !wantCategory && !wantBudget {
-		return nil
+		return single(txn), nil
 	}
 
 	// Vendor-order resolution comes first: for all-in-one merchants the
@@ -99,7 +103,7 @@ func (c *Categorizer) Enrich(ctx context.Context, txn *firefly.TransactionSplitS
 			return c.enrichFromOrder(ctx, txn, m, wantCategory, wantBudget)
 		case MatchUnresolved:
 			c.logger.Infof("abstaining on %q (%s): %s", txn.Description, m.Vendor, m.Reason)
-			return nil
+			return single(txn), nil
 		}
 	}
 
@@ -137,14 +141,23 @@ func (c *Categorizer) Enrich(ctx context.Context, txn *firefly.TransactionSplitS
 
 	// Anything still unresolved gets a single combined model call.
 	if !wantCategory && !wantBudget {
-		return nil
+		return single(txn), nil
 	}
-	return c.askModel(ctx, txn, txn.Description, examples, wantCategory, wantBudget)
+	if err := c.askModel(ctx, txn, txn.Description, examples, wantCategory, wantBudget, false); err != nil {
+		return single(txn), err
+	}
+	return single(txn), nil
+}
+
+// single wraps a transaction as the one-element split list of an unsplit
+// upload.
+func single(txn *firefly.TransactionSplitStore) []firefly.TransactionSplitStore {
+	return []firefly.TransactionSplitStore{*txn}
 }
 
 // enrichFromOrder categorizes a transaction from the contents of the vendor
 // order it was matched to, instead of the opaque bank description.
-func (c *Categorizer) enrichFromOrder(ctx context.Context, txn *firefly.TransactionSplitStore, m OrderMatch, wantCategory, wantBudget bool) error {
+func (c *Categorizer) enrichFromOrder(ctx context.Context, txn *firefly.TransactionSplitStore, m OrderMatch, wantCategory, wantBudget bool) ([]firefly.TransactionSplitStore, error) {
 	c.logger.Debugf("matched %q to %s order: %s", txn.Description, m.Vendor, m.Items)
 
 	// Surface the matched items in the notes so the assignment is explainable
@@ -164,24 +177,62 @@ func (c *Categorizer) enrichFromOrder(ctx context.Context, txn *firefly.Transact
 		}
 	}
 	if !wantCategory && !wantBudget {
-		return nil
+		return single(txn), nil
 	}
 
-	// Ask the model with the real order contents as the description. No
-	// few-shot examples: this vendor's history is ambiguous by definition, and
-	// Firefly's descriptions are bank strings that won't match item text.
-	desc := fmt.Sprintf("%s order: %s", m.Vendor, m.Items)
-	return c.askModel(ctx, txn, desc, nil, wantCategory, wantBudget)
+	// The order contents stand in for the opaque bank description everywhere
+	// below — and deliberately without the vendor name: naming the shop pulls
+	// small models toward whatever that shop mostly sells (a warehouse club
+	// makes everything look like groceries) instead of the goods in hand. No
+	// few-shot examples either: this vendor's history is ambiguous by
+	// definition, and Firefly's descriptions are bank strings that won't match
+	// item text.
+	desc := m.Items
+
+	// Per-item splitting: one order can span several categories (pet supplies
+	// and medicine in the same basket), which is exactly what a Firefly split
+	// transaction represents. Category and budget are decided together per
+	// line in one call, so each split lands in its own budget rather than
+	// every split inheriting a single verdict about the whole basket.
+	if wantCategory && c.cfg.splitOrders() && len(m.LineItems) >= 2 {
+		if splits := c.splitByLineItems(ctx, txn, m, wantBudget); splits != nil {
+			if len(splits) > 1 {
+				c.logger.Infof("splitting %q into %d categories from %s order", txn.Description, len(splits), m.Vendor)
+			}
+			return splits, nil
+		}
+		// Splitting didn't apply; fall through and categorize as a whole.
+	}
+
+	if err := c.askModel(ctx, txn, desc, nil, wantCategory, wantBudget, true); err != nil {
+		return single(txn), err
+	}
+	return single(txn), nil
 }
 
-func (c *Categorizer) askModel(ctx context.Context, txn *firefly.TransactionSplitStore, desc string, examples []firefly.TransactionSplit, wantCategory, wantBudget bool) error {
-	system := "You label bank transactions. Reply with ONLY a JSON object of the form " +
-		`{"vendor":"","category":"","budget":""}. vendor is the canonical merchant name you infer from the transaction. ` +
-		"Pick category and budget from the corresponding allowed list exactly as written. " +
-		"If nothing fits, use an empty string. Never invent names that are not in the lists."
-
+// askModel labels a transaction in one call. When fromOrder is set, desc holds
+// what was actually purchased rather than the bank's description, so the model
+// is told to categorize the goods instead of the merchant.
+func (c *Categorizer) askModel(ctx context.Context, txn *firefly.TransactionSplitStore, desc string, examples []firefly.TransactionSplit, wantCategory, wantBudget, fromOrder bool) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Transaction: %q, type %s, amount %s\n", desc, txn.Type, txn.Amount)
+	var system string
+	if fromOrder {
+		// desc is what was bought, with no merchant string attached — so there
+		// is nothing for the model to infer a vendor from, and we already know
+		// which vendor matched. Asking for it would only waste tokens.
+		system = goodsSystemPrompt +
+			"Reply with ONLY a JSON object of the form " +
+			`{"category":"","budget":""}. ` +
+			"Pick each value from the corresponding allowed list exactly as written. " +
+			"If nothing fits, use an empty string. Never invent names that are not in the lists."
+		fmt.Fprintf(&b, "Purchased: %s, total %s\n", truncateText(desc, maxPromptItems), txn.Amount)
+	} else {
+		system = "You label bank transactions. Reply with ONLY a JSON object of the form " +
+			`{"vendor":"","category":"","budget":""}. vendor is the canonical merchant name you infer from the transaction. ` +
+			"Pick category and budget from the corresponding allowed list exactly as written. " +
+			"If nothing fits, use an empty string. Never invent names that are not in the lists."
+		fmt.Fprintf(&b, "Transaction: %q, type %s, amount %s\n", desc, txn.Type, txn.Amount)
+	}
 	if wantCategory {
 		fmt.Fprintf(&b, "Allowed categories: %s\n", strings.Join(c.categories, ", "))
 		// A non-empty value here is the source/bank label (reuse-first didn't
@@ -218,8 +269,8 @@ func (c *Categorizer) askModel(ctx context.Context, txn *firefly.TransactionSpli
 		return fmt.Errorf("could not parse model output %q: %w", raw, err)
 	}
 
-	// The inferred vendor is informational: it helps when writing match
-	// patterns for the vendors config block.
+	// The inferred vendor is informational and only asked for on the non-order
+	// path: it helps when writing match patterns for the vendors config block.
 	if v := strings.TrimSpace(out.Vendor); v != "" {
 		c.logger.Debugf("model inferred vendor %q for %q", v, txn.Description)
 	}

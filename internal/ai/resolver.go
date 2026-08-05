@@ -18,11 +18,21 @@ const (
 	MatchUnresolved
 )
 
+// OrderLineItem is a priced line of a matched order. Cents is the absolute
+// line amount; two or more lines allow the charge to be uploaded as a Firefly
+// split transaction when they fall into different categories.
+type OrderLineItem struct {
+	Name  string
+	Cents int64
+}
+
 // OrderMatch is the result of OrderResolver.Resolve.
 type OrderMatch struct {
 	State  MatchState
 	Vendor string // configured vendor name (Resolved/Unresolved only)
 	Items  string // item summary of the matched order (Resolved only)
+	// LineItems is empty unless the vendor supplied priced lines.
+	LineItems []OrderLineItem
 	// Category is the merchant-provided category of the matched order, if the
 	// vendor exposes one (e.g. a department name). May map directly onto a
 	// Firefly category without a model call.

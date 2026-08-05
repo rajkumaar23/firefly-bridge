@@ -50,6 +50,14 @@ type Config struct {
 	// blanked out. Defaults to false (existing values are left untouched).
 	OverwriteExisting bool `yaml:"overwrite_existing"`
 
+	// SplitOrders controls what happens when a matched vendor order's priced
+	// line items fall into different categories. When true (the default), the
+	// charge is uploaded as a Firefly split transaction with one split per
+	// category, whose amounts are scaled to sum exactly to the charge. Set it
+	// to false to categorize such charges as a single transaction instead.
+	// Only ever applies to vendors whose orders step supplies line_items.
+	SplitOrders *bool `yaml:"split_orders"`
+
 	// MaxExamples caps how many similar past transactions are fetched and shown
 	// to the model as few-shot context. Kept small on purpose to fit tiny local
 	// models' context windows. Defaults to 5 when unset.
@@ -63,6 +71,12 @@ const (
 	defaultMaxExamples    = 5
 	defaultTimeoutSeconds = 30
 )
+
+// splitOrders reports whether multi-category vendor orders become Firefly
+// split transactions. Unset means enabled.
+func (c *Config) splitOrders() bool {
+	return c.SplitOrders == nil || *c.SplitOrders
+}
 
 // applyDefaults fills zero-valued optional fields with their defaults.
 func (c *Config) applyDefaults() {

@@ -86,7 +86,6 @@ firefly-bridge [flags]
 | `-cdp-debug` | bool | `false` | Enable verbose debug logging for browser automation. Useful for diagnosing selector issues. |
 | `-csv-debug` | bool | `false` | Log every parsed CSV/Excel row with its row number. Useful for diagnosing `skip_head_rows`, `skip_tail_rows`, and column index issues. |
 | `-vendors` | string | `""` | Scrape the configured [vendors'](CONFIG-DSL.md#vendors) order history before the sync so their charges are categorized from what was actually bought. `"all"` or a comma-separated list of vendor names; empty disables vendor scraping. Requires `ai.enabled`. |
-| `-vendor-report` | string | `".vendor-review.json"` | Where to write the review report of vendor charges that could not be matched to an order (and were therefore left uncategorized). Rewritten on every vendor run. |
 | `-list-orders` | bool | `false` | Log in to the configured vendors, print every scraped order, and exit without syncing any institution. Combine with `-vendors` to restrict which vendors run (default all). Useful for tuning the `orders` step selectors. |
 
 ### Runtime directories

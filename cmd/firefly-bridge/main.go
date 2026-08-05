@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -41,7 +40,6 @@ func run() int {
 	var skipInstitutions = flag.String("skip", "", "comma-separated list of institution names to skip; all other institutions run normally")
 	var csvDebug = flag.Bool("csv-debug", false, "log every parsed CSV row with its row number to help diagnose parsing issues")
 	var vendorsFlag = flag.String("vendors", "", "scrape configured vendors' order history to categorize their charges from what was actually bought; \"all\" or a comma-separated list of vendor names, empty disables vendor scraping")
-	var vendorReportPath = flag.String("vendor-report", ".vendor-review.json", "path to write the review report of vendor charges that could not be matched to an order")
 	var listOrders = flag.Bool("list-orders", false, "log in to the configured vendors, print their scraped orders, and exit without syncing any institution; combine with -vendors to restrict which vendors run (default all)")
 	flag.Parse()
 
@@ -111,7 +109,7 @@ func run() int {
 	// actual contents. Everything here is best-effort — a vendor that fails to
 	// scrape is simply left out of the index and its transactions enrich the
 	// normal way.
-	orderIndex := scrapeVendors(logger, cdp, cfg, categorizer, *vendorsFlag)
+	scrapeVendors(logger, cdp, cfg, categorizer, *vendorsFlag)
 
 	runState, err := state.Load(*statePath)
 	if err != nil {
@@ -224,10 +222,6 @@ func run() int {
 		}
 	}
 
-	if orderIndex != nil {
-		writeVendorReport(logger, orderIndex, *vendorReportPath)
-	}
-
 	if len(errs) > 0 {
 		logger.Errorf("%d error(s) occurred:", len(errs))
 		for idx, e := range errs {
@@ -287,21 +281,21 @@ func forEachRequestedVendor(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *
 	return processed
 }
 
-// scrapeVendors logs into each requested vendor and builds an order index for
-// the categorizer. It returns nil when vendor scraping is disabled or not
+// scrapeVendors logs into each requested vendor and hands an order index to
+// the categorizer. It is a no-op when vendor scraping is disabled or not
 // applicable, so charges fall back to normal enrichment instead of being
 // abstained on.
-func scrapeVendors(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config.Config, categorizer *ai.Categorizer, vendorsFlag string) *vendor.Index {
+func scrapeVendors(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config.Config, categorizer *ai.Categorizer, vendorsFlag string) {
 	if vendorsFlag == "" {
-		return nil
+		return
 	}
 	if categorizer == nil {
 		logger.Warn("-vendors specified but AI enrichment is disabled; skipping vendor scraping")
-		return nil
+		return
 	}
 	if len(cfg.Vendors) == 0 {
 		logger.Warn("-vendors specified but no vendors are configured")
-		return nil
+		return
 	}
 
 	index := vendor.NewIndex()
@@ -316,11 +310,9 @@ func scrapeVendors(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config.Co
 		indexed++
 	})
 	if indexed == 0 {
-		return nil
+		return
 	}
-
 	categorizer.UseOrderResolver(index)
-	return index
 }
 
 // listVendorOrders implements -list-orders: scrape the requested vendors and
@@ -348,28 +340,6 @@ func listVendorOrders(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config
 		return 1
 	}
 	return 0
-}
-
-// writeVendorReport persists the abstained vendor charges for manual review.
-// It always rewrites the file — even when empty — so a stale report from a
-// previous run can't mislead.
-func writeVendorReport(logger *logrus.Logger, index *vendor.Index, path string) {
-	entries := index.Report()
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		logger.Warnf("failed to marshal vendor report: %s", err.Error())
-		return
-	}
-	// 0600: the report contains real transaction descriptions and amounts.
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		logger.Warnf("failed to write vendor report: %s", err.Error())
-		return
-	}
-	if len(entries) > 0 {
-		logger.Infof("%d vendor charge(s) could not be matched to an order — review them in %s", len(entries), path)
-	} else {
-		logger.Infof("all vendor charges matched an order; empty report written to %s", path)
-	}
 }
 
 // processInvestmentAccount handles investment account synchronization
@@ -483,13 +453,27 @@ func processRegularAccount(ctx context.Context, logger *logrus.Entry, cdp *chrom
 	uploaded := 0
 	for _, t := range filtered {
 		t.Tags = &[]string{fireflyTag}
+		splits := []firefly.TransactionSplitStore{*t}
 		if categorizer != nil {
-			if err := categorizer.Enrich(ctx, t); err != nil {
+			enriched, err := categorizer.Enrich(ctx, t)
+			if err != nil {
 				// Enrichment is best-effort; never block an upload on it.
 				logger.Warnf("failed to enrich transaction (%s, %s): %s", t.Date.Format(time.DateOnly), t.Description, err.Error())
 			}
+			if len(enriched) > 0 {
+				splits = enriched
+			}
 		}
-		res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, firefly.StoreTransactionJSONRequestBody{Transactions: []firefly.TransactionSplitStore{*t}})
+
+		body := firefly.StoreTransactionJSONRequestBody{Transactions: splits}
+		// A multi-split group needs a title; Firefly shows it in place of the
+		// individual split descriptions.
+		if len(splits) > 1 {
+			groupTitle := t.Description
+			body.GroupTitle = &groupTitle
+			logger.Infof("storing %s as %d splits", t.Description, len(splits))
+		}
+		res, err := ff.StoreTransaction(ctx, &firefly.StoreTransactionParams{}, body)
 		if err != nil {
 			return false, fmt.Errorf("failed to store transaction: (%s, %s, %s, %s): %w", t.Date.Format(time.DateOnly), t.Description, t.Amount, t.Type, err)
 		}

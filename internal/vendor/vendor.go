@@ -55,12 +55,22 @@ func (v *Vendor) dateWindowDays() int {
 	return defaultDateWindowDays
 }
 
+// LineItem is a priced line of an order, used to split a charge across
+// categories. Cents is the absolute line amount.
+type LineItem struct {
+	Name  string
+	Cents int64
+}
+
 // Order is a parsed vendor order.
 type Order struct {
 	Date     time.Time
 	Cents    int64 // absolute order total in cents
 	Items    string
 	Category string
+	// LineItems is empty unless the vendor's orders JS supplied priced
+	// entries; only lines with a parseable amount are kept.
+	LineItems []LineItem
 }
 
 func (v *Vendor) Login(cdp *chromedp.ChromeDP) error {
@@ -92,19 +102,54 @@ func (v *Vendor) GetOrders(cdp *chromedp.ChromeDP) ([]Order, error) {
 
 	orders := make([]Order, 0, len(raw))
 	for _, r := range raw {
-		date, err := parseDate(r.Date, layouts)
+		order, err := parseOrder(r, layouts)
 		if err != nil {
-			logger.Warnf("vendor %s: skipping order with unparseable date %q", v.Name, r.Date)
+			logger.Warnf("vendor %s: skipping order (%s): %s", v.Name, r.Date, err.Error())
 			continue
 		}
-		cents, err := amountCents(r.Amount)
-		if err != nil {
-			logger.Warnf("vendor %s: skipping order with unparseable amount %q (%s)", v.Name, r.Amount, r.Date)
-			continue
-		}
-		orders = append(orders, Order{Date: date, Cents: cents, Items: r.Items, Category: r.Category})
+		orders = append(orders, order)
 	}
 	return orders, nil
+}
+
+// parseOrder converts one scraped row into an Order. Rows whose date or total
+// can't be read are rejected; individual line items that can't be priced are
+// dropped rather than failing the whole order.
+func parseOrder(r chromedp.Order, layouts []string) (Order, error) {
+	date, err := parseDate(r.Date, layouts)
+	if err != nil {
+		return Order{}, fmt.Errorf("unparseable date %q", r.Date)
+	}
+	cents, err := amountCents(r.Amount)
+	if err != nil {
+		return Order{}, fmt.Errorf("unparseable amount %q", r.Amount)
+	}
+
+	var lines []LineItem
+	var names []string
+	for _, li := range r.LineItems {
+		name := strings.TrimSpace(li.Name)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+		c, err := amountCents(li.Amount)
+		if err != nil {
+			continue // unpriced line: still worth naming, can't form a split
+		}
+		lines = append(lines, LineItem{Name: name, Cents: c})
+	}
+
+	// Fall back to the joined line names when no summary string was supplied.
+	items := strings.TrimSpace(r.Items)
+	if items == "" {
+		items = strings.Join(names, ", ")
+	}
+
+	return Order{
+		Date: date, Cents: cents, Items: items,
+		Category: r.Category, LineItems: lines,
+	}, nil
 }
 
 func parseDate(s string, layouts []string) (time.Time, error) {

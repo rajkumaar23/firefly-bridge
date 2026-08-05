@@ -8,17 +8,6 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/ai"
 )
 
-// ReviewEntry is one abstained charge in the post-run review report: a
-// transaction that belongs to a scraped vendor but could not be matched to
-// exactly one order, so no category/budget was assigned.
-type ReviewEntry struct {
-	Date        string `json:"date"`
-	Amount      string `json:"amount"`
-	Description string `json:"description"`
-	Vendor      string `json:"vendor"`
-	Reason      string `json:"reason"`
-}
-
 type indexedVendor struct {
 	name       string
 	re         *regexp.Regexp
@@ -32,7 +21,6 @@ type indexedVendor struct {
 // being abstained on. The run is single-threaded, so no locking is needed.
 type Index struct {
 	vendors []indexedVendor
-	report  []ReviewEntry
 }
 
 func NewIndex() *Index {
@@ -66,8 +54,7 @@ func (idx *Index) Resolve(description, amount string, date time.Time) ai.OrderMa
 
 		cents, err := amountCents(amount)
 		if err != nil {
-			return idx.unresolved(v.name, description, amount, date,
-				fmt.Sprintf("unparseable transaction amount %q", amount))
+			return unresolved(v.name, fmt.Sprintf("unparseable transaction amount %q", amount))
 		}
 
 		var hits []Order
@@ -79,42 +66,33 @@ func (idx *Index) Resolve(description, amount string, date time.Time) ai.OrderMa
 
 		switch {
 		case len(hits) == 0:
-			return idx.unresolved(v.name, description, amount, date,
+			return unresolved(v.name,
 				fmt.Sprintf("no order of %s within %d day(s)", amount, v.windowDays))
 		case sameItems(hits):
 			// One order, possibly scraped more than once (e.g. overlapping
 			// history pages) — still an unambiguous match.
+			lines := make([]ai.OrderLineItem, 0, len(hits[0].LineItems))
+			for _, li := range hits[0].LineItems {
+				lines = append(lines, ai.OrderLineItem{Name: li.Name, Cents: li.Cents})
+			}
 			return ai.OrderMatch{
-				State:    ai.MatchResolved,
-				Vendor:   v.name,
-				Items:    hits[0].Items,
-				Category: hits[0].Category,
+				State:     ai.MatchResolved,
+				Vendor:    v.name,
+				Items:     hits[0].Items,
+				LineItems: lines,
+				Category:  hits[0].Category,
 			}
 		default:
-			return idx.unresolved(v.name, description, amount, date,
+			return unresolved(v.name,
 				fmt.Sprintf("%d different orders of %s within %d day(s)", len(hits), amount, v.windowDays))
 		}
 	}
 	return ai.OrderMatch{State: ai.MatchNotAVendor}
 }
 
-// Report returns the accumulated abstained charges (never nil, so an empty
-// report marshals as [] rather than null).
-func (idx *Index) Report() []ReviewEntry {
-	if idx.report == nil {
-		return []ReviewEntry{}
-	}
-	return idx.report
-}
-
-func (idx *Index) unresolved(vendor, description, amount string, date time.Time, reason string) ai.OrderMatch {
-	idx.report = append(idx.report, ReviewEntry{
-		Date:        date.Format(time.DateOnly),
-		Amount:      amount,
-		Description: description,
-		Vendor:      vendor,
-		Reason:      reason,
-	})
+// unresolved marks a charge the categorizer should abstain on. The caller
+// logs the reason per transaction.
+func unresolved(vendor, reason string) ai.OrderMatch {
 	return ai.OrderMatch{State: ai.MatchUnresolved, Vendor: vendor, Reason: reason}
 }
 
