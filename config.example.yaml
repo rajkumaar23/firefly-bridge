@@ -42,6 +42,8 @@ secrets:
 #     is no clear precedent — so existing rules win.
 # Tip for small local models (e.g. qwen on a Jetson): keep your Firefly category
 # and budget lists modest and max_examples low to stay within the context window.
+# Reasoning is disabled on every request, so thinking models don't burn their
+# token budget on a scratchpad and reply with nothing.
 ai:
   enabled: false                              # master switch; omit the whole block to disable
   base_url: "http://jetson.local:8080/v1"     # OpenAI-compatible API root (includes /v1)

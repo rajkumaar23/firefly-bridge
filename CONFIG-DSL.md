@@ -271,6 +271,8 @@ ai:
 | `max_examples` | int | no | `5` | How many similar past transactions are used as reuse precedent and few-shot context. |
 | `timeout_seconds` | int | no | `30` | Per-request timeout for the chat endpoint. |
 
+Reasoning is turned off on every request (`chat_template_kwargs.enable_thinking`, `think`, `reasoning_effort`, whichever your server understands) — a thinking model otherwise spends the whole token budget on its scratchpad and returns an empty answer. Endpoints that reject those parameters are detected on the first call and skipped from then on.
+
 ### How it works (and how it stays out of the way of rules)
 
 The categorizer is built to **complement** Firefly III's rule engine, never to fight it:
