@@ -93,7 +93,7 @@ firefly-bridge [flags]
 Two directories are created automatically alongside the state file at startup:
 
 - `downloads/` — temporary landing zone for CSV/Excel files downloaded during browser automation; files are read and then deleted after each sync. Password-protected Excel files are supported via the `password` field in the `excel` step config (plain string, or an `op://` / `bw://` secret reference).
-- `chromedp-data/` — browser user data directory used by the automation session (cookies, cache, local storage). 
+- `chromedp-data/` — browser user data directory used by the automation session (cookies, cache, local storage). Sessions persist across runs on purpose — it's what lets a login flow use `skip_remaining_if` to skip re-authentication. To explicitly tear one down, add an optional `logout` flow to the institution or vendor entry (see [CONFIG-DSL.md](CONFIG-DSL.md#institutions)).
 
 ---
 

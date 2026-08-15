@@ -7,6 +7,7 @@ import (
 
 	"github.com/rajkumaar23/firefly-bridge/internal/ai"
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
+	"gopkg.in/yaml.v3"
 )
 
 func date(s string) time.Time {
@@ -262,5 +263,36 @@ func TestAddInvalidRegex(t *testing.T) {
 	idx := NewIndex()
 	if err := idx.Add(&Vendor{Name: "Bad", Match: "("}, nil); err == nil {
 		t.Error("expected error for invalid match regex, got none")
+	}
+}
+
+func TestLogoutFlowUnmarshals(t *testing.T) {
+	const yamlDoc = `
+name: Test Store
+match: "TEST STORE"
+login:
+  - type: navigate
+    url: "https://store.example.com/login"
+logout:
+  - type: click
+    selector: "#account-menu"
+  - type: click
+    selector: "#sign-out"
+orders:
+  - type: orders
+    evaluate: "[]"
+`
+	var v Vendor
+	if err := yaml.Unmarshal([]byte(yamlDoc), &v); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(v.LogoutFlow) != 2 {
+		t.Fatalf("LogoutFlow len = %d, want 2", len(v.LogoutFlow))
+	}
+	if got := v.LogoutFlow[0].Step.Type(); got != chromedp.StepClick {
+		t.Errorf("logout step 0 type = %s, want %s", got, chromedp.StepClick)
+	}
+	if got := v.LogoutFlow[1].Step.Type(); got != chromedp.StepClick {
+		t.Errorf("logout step 1 type = %s, want %s", got, chromedp.StepClick)
 	}
 }

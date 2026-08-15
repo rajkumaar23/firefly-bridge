@@ -113,6 +113,7 @@ browser_exec_path: "/path/to/chrome"  # required
 institutions:     # required, minimum 1
   - name: "..."
     login: [...]
+    logout: [...]  # optional
     accounts: [...]
 
 vendors:          # optional
@@ -316,6 +317,7 @@ institutions:
       - type: navigate
         url: "https://bank.example.com/"
       # ... more steps
+    # logout: [...]  # optional; sign out after the accounts are synced
     accounts:
       - name: "Checking"
         # ...
@@ -327,6 +329,7 @@ institutions:
 |---|---|---|---|
 | `name` | string | yes | Human-readable institution name. Used in logs and with the `-institution` flag. |
 | `login` | array of [steps](#browser-step-reference) | yes (min 1) | Steps executed once to authenticate with the institution. The browser session persists for all accounts under this institution. |
+| `logout` | array of [steps](#browser-step-reference) | no | Optional steps executed once, after all of the institution's accounts have been synced, to sign out of the site and tear the session down. Runs even when some accounts failed (a live session is exactly what must not linger); skipped entirely when login failed. A failed logout is logged as a warning and never fails the run. Omit it to keep the session alive in the persistent browser profile between runs. |
 | `accounts` | array | yes (min 1) | List of accounts to sync within this institution. |
 
 ---
@@ -409,6 +412,11 @@ vendors:
       - type: navigate
         url: "https://store.example.com/account/orders"
       # ... send_keys / click steps, same DSL as institution logins
+    # logout:                        # optional; sign out after orders scraped
+    #   - type: click
+    #     selector: "#account-menu"
+    #   - type: click
+    #     selector: "#sign-out"
     orders:
       - type: navigate
         url: "https://store.example.com/account/orders"
@@ -428,6 +436,7 @@ vendors:
 | `date_window_days` | integer | no | `3` | How many days a charge date may differ from the order date and still match — cards typically charge at shipment, a few days after the order. An explicit `0` means same-day only. |
 | `date_format` | string | no | _common layouts_ | Go `time.Parse` layout for the `date` strings returned by the orders JS. When omitted, common layouts are tried: `"2006-01-02"`, RFC3339, `"January 2, 2006"`, `"Jan 2, 2006"`, `"01/02/2006"`. |
 | `login` | array of [steps](#browser-step-reference) | yes (min 1) | — | Steps executed once to authenticate with the vendor. Runs in the same persistent browser profile as institutions, so a manually-completed 2FA challenge survives across runs. |
+| `logout` | array of [steps](#browser-step-reference) | no | — | Optional steps executed after the vendor's orders have been scraped (both `-vendors` and `-list-orders` runs) to sign out of the site. A failed logout is logged as a warning and never fails the run. |
 | `orders` | array of [steps](#browser-step-reference) | yes (min 1) | — | Steps to scrape the order history. Must include at least one [`orders`](#orders) step. |
 
 ### When a vendor's login can't be automated
@@ -1121,6 +1130,7 @@ The config is fully validated on load. Errors are reported with field paths.
 | `institutions` | Required, minimum 1 entry |
 | `institution.name` | Required, non-empty |
 | `institution.login` | Required, minimum 1 step |
+| `institution.logout` / `vendor.logout` | Optional; standard per-step validation applies |
 | `institution.accounts` | Required, minimum 1 entry |
 | `account.name` | Required, non-empty |
 | `account.firefly_account_id` | Required, positive integer |

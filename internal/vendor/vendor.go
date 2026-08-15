@@ -45,6 +45,7 @@ type Vendor struct {
 	// must post on the order date itself.
 	DateWindowDays *int                   `yaml:"date_window_days"`
 	LoginFlow      []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
+	LogoutFlow     []chromedp.BrowserStep `yaml:"logout" validate:"omitempty,dive"`
 	OrdersFlow     []chromedp.BrowserStep `yaml:"orders" validate:"min=1,dive"`
 }
 
@@ -75,6 +76,19 @@ type Order struct {
 
 func (v *Vendor) Login(cdp *chromedp.ChromeDP) error {
 	if _, err := cdp.RunSteps(v.LoginFlow); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Logout runs the optional logout flow after a vendor's orders have been
+// scraped. It is a no-op when no logout steps are configured.
+func (v *Vendor) Logout(cdp *chromedp.ChromeDP) error {
+	if len(v.LogoutFlow) == 0 {
+		return nil
+	}
+
+	if _, err := cdp.RunSteps(v.LogoutFlow); err != nil {
 		return err
 	}
 	return nil

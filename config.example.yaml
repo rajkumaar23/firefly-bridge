@@ -119,6 +119,18 @@ institutions:
       # - type: wait_not_visible
       #   js_path: "document.querySelector('#loading-overlay')"
 
+      # logout — OPTIONAL: sign the institution out of the browser after all
+      # of its accounts have been synced (runs even if some accounts failed;
+      # skipped when login failed). A failed logout logs a warning and never
+      # fails the run. Omit to keep the session alive in the persistent
+      # profile between runs (fastest for frequent syncs).
+      # - type: click
+      #   selector: "#account-menu"
+      # - type: click
+      #   selector: "#sign-out"
+      # - type: wait_not_visible
+      #   selector: "#login-form"
+
     accounts:
 
       # ── Credit card: single amount column with negate_if ─────────────────
@@ -532,6 +544,14 @@ vendors:
       # Leave slack for a manually-completed 2FA prompt on the first run.
       - type: sleep
         duration: "15s"
+
+    # logout — OPTIONAL: sign the vendor out after the orders have been
+    # scraped (runs on both -vendors and -list-orders). Same best-effort
+    # semantics as the institution variant.
+    # - type: click
+    #   selector: "#account-menu"
+    # - type: click
+    #   selector: "#sign-out"
 
     orders:
       - type: navigate

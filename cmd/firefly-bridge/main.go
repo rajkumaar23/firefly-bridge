@@ -214,6 +214,16 @@ func run() int {
 			}
 		}
 
+		// Best-effort: a failed logout never undoes the accounts that were
+		// already synced, so it is logged as a warning, not a run error.
+		if len(i.LogoutFlow) > 0 {
+			if err := i.Logout(cdp); err != nil {
+				iLog.Warnf("failed to logout: %s", err.Error())
+			} else {
+				iLog.Info("logged out")
+			}
+		}
+
 		if !institutionFailed {
 			runState.Institutions[i.Name] = time.Now()
 			if err := runState.Save(*statePath); err != nil {
@@ -276,6 +286,15 @@ func forEachRequestedVendor(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *
 			continue
 		}
 		fn(v, orders)
+		// Best-effort: a failed logout is logged as a warning and does not
+		// count against the vendor's successful scrape.
+		if len(v.LogoutFlow) > 0 {
+			if err := v.Logout(cdp); err != nil {
+				vLog.Warnf("failed to logout, ignoring: %s", err.Error())
+			} else {
+				vLog.Info("logged out")
+			}
+		}
 		processed++
 	}
 	return processed

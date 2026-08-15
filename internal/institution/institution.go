@@ -85,13 +85,28 @@ func (a *Account) GetHoldings(cdp *chromedp.ChromeDP) (*firefly.FireflyHoldings,
 }
 
 type Institution struct {
-	Name      string                 `yaml:"name" validate:"required"`
-	LoginFlow []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
-	Accounts  []Account              `yaml:"accounts" validate:"min=1,dive"`
+	Name       string                 `yaml:"name" validate:"required"`
+	LoginFlow  []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
+	LogoutFlow []chromedp.BrowserStep `yaml:"logout" validate:"omitempty,dive"`
+	Accounts   []Account              `yaml:"accounts" validate:"min=1,dive"`
 }
 
 func (i *Institution) Login(cdp *chromedp.ChromeDP) error {
 	if _, err := cdp.RunSteps(i.LoginFlow); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Logout runs the optional logout flow after the institution's accounts have
+// been processed. It is a no-op when no logout steps are configured.
+func (i *Institution) Logout(cdp *chromedp.ChromeDP) error {
+	if len(i.LogoutFlow) == 0 {
+		return nil
+	}
+
+	if _, err := cdp.RunSteps(i.LogoutFlow); err != nil {
 		return err
 	}
 
