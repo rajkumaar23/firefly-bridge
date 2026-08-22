@@ -29,6 +29,7 @@ This document is a complete reference for every attribute and feature available 
   - [`wait_visible`](#wait_visible)
   - [`wait_not_visible`](#wait_not_visible)
   - [`wait_not_present`](#wait_not_present)
+  - [`wait_selector`](#wait_selector)
   - [`click`](#click)
   - [`sleep`](#sleep)
   - [`reload`](#reload)
@@ -542,6 +543,27 @@ Pauses execution until a DOM element is completely removed from the DOM. Unlike 
 |---|---|---|---|
 | `selector` | string | one of `selector` or `js_path` | CSS selector for the element to wait to be removed from the DOM. |
 | `js_path` | string | one of `selector` or `js_path` | JavaScript expression that evaluates to a DOM element. |
+
+---
+
+### `wait_selector`
+
+Polls until a CSS selector matches anywhere in the document (present **or** hidden), with a bounded timeout. Where [`wait_visible`](#wait_visible) blocks indefinitely and requires visibility, this one has a deadline, accepts hidden elements, and — the important part — is **navigation-safe**.
+
+It polls from the Go side with many short evaluates instead of running one long in-page JS loop. When the page navigates mid-wait (login gateway redirects, post-login redirects, full-page SPA reloads) the execution context is destroyed; a single `evaluate` polling loop dies on that navigation with `Inspected target navigated or closed`, but `wait_selector`'s next poll simply lands in the fresh context and keeps counting. Use it for "wait for X to appear" whenever the page is still redirecting under you; use `wait_visible` when you just need the DOM to settle on a stable page.
+
+```yaml
+- type: wait_selector
+  selector: "#login-form"
+  timeout: "45s"          # default: 30s
+  error: "login form did not appear (bot check or dead session?)"  # default is generated
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `selector` | string | yes | CSS selector to poll for. |
+| `timeout` | duration | no | Polling deadline. Default `30s`. |
+| `error` | string | no | Error message returned when the deadline expires. Default: `selector <sel> not found within <timeout>`. |
 
 ---
 
