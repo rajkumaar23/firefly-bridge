@@ -248,6 +248,154 @@ func TestResolveDateWindow(t *testing.T) {
 	}
 }
 
+// Orders without an effective date keep the symmetric window on BOTH sides:
+// a charge that posts a couple of days before the order date still matches.
+func TestResolveSymmetricBackwardWindow(t *testing.T) {
+	idx := newTestIndex(t, []Order{{
+		Date: date("2026-07-10"), Cents: 4567, Items: "Dog food",
+	}}, nil) // default 3-day window, no effective date
+
+	// 2 days before the order date: inside the symmetric window.
+	if m := idx.Resolve("MEGASTORE.COM", "45.67", date("2026-07-08")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved 2 days before order (symmetric window), got %+v", m)
+	}
+	// 3 days before: window edge, still in.
+	if m := idx.Resolve("MEGASTORE.COM", "45.67", date("2026-07-07")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved at backward window edge, got %+v", m)
+	}
+	// 4 days before: out.
+	if m := idx.Resolve("MEGASTORE.COM", "45.67", date("2026-07-06")); m.State != ai.MatchUnresolved {
+		t.Errorf("expected Unresolved 4 days before order, got %+v", m)
+	}
+}
+
+// Effective-date matching: a charge that posts long after the order date but
+// within window of the shipment/delivery date must resolve.
+func TestResolveEffectiveDateExtendsRange(t *testing.T) {
+	idx := newTestIndex(t, []Order{{
+		Date:          date("2026-08-08"),
+		EffectiveDate: date("2026-08-21"),
+		Cents:         734,
+		Items:         "Shower curtain",
+	}}, nil) // default 3-day window
+
+	// 13 days after the order date (out of the old symmetric window) but 0
+	// days after delivery: resolves.
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-21")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved on delivery date, got %+v", m)
+	}
+	// 3 days after delivery: still inside the window.
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-24")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved at window edge after delivery, got %+v", m)
+	}
+	// 4 days after delivery: out.
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-25")); m.State != ai.MatchUnresolved {
+		t.Errorf("expected Unresolved 4 days after delivery, got %+v", m)
+	}
+	// Day before the order: the range starts one day before the order date
+	// (immediate billing at checkout).
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-07")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved day before order, got %+v", m)
+	}
+	// Two days before the order: out.
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-06")); m.State != ai.MatchUnresolved {
+		t.Errorf("expected Unresolved 2 days before order, got %+v", m)
+	}
+}
+
+// A charge inside the gap between order date and delivery date is inside the
+// range (shipment happened somewhere in between).
+func TestResolveChargeBetweenOrderAndDelivery(t *testing.T) {
+	idx := newTestIndex(t, []Order{{
+		Date:          date("2026-08-08"),
+		EffectiveDate: date("2026-08-21"),
+		Cents:         734,
+		Items:         "Shower curtain",
+	}}, nil)
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-15")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved mid-range, got %+v", m)
+	}
+}
+
+// An order with an effective date earlier than its order date (should not
+// happen, but a bad scrape could produce it) still yields a sensible range.
+func TestResolveEffectiveDateBeforeOrder(t *testing.T) {
+	idx := newTestIndex(t, []Order{{
+		Date:          date("2026-08-21"),
+		EffectiveDate: date("2026-08-08"),
+		Cents:         734,
+		Items:         "Shower curtain",
+	}}, nil)
+	// Range is [08-07, 08-21+3=08-24] regardless of which is lo/hi.
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-07")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved at range start, got %+v", m)
+	}
+	if m := idx.Resolve("MEGASTORE.COM", "$7.34", date("2026-08-24")); m.State != ai.MatchResolved {
+		t.Errorf("expected Resolved at range end, got %+v", m)
+	}
+}
+
+func TestParseEffectiveDateYearless(t *testing.T) {
+	od := date("2026-08-20")
+	got := parseEffectiveDate("August 21", od, nil)
+	if got.Format(time.DateOnly) != "2026-08-21" {
+		t.Errorf("yearless August 21 anchored to 2026-08-20 order = %s, want 2026-08-21", got.Format(time.DateOnly))
+	}
+	// December order, delivered in January: rolls forward one year.
+	got = parseEffectiveDate("January 2", date("2026-12-28"), nil)
+	if got.Format(time.DateOnly) != "2027-01-02" {
+		t.Errorf("Jan 2 anchored to 2026-12-28 order = %s, want 2027-01-02", got.Format(time.DateOnly))
+	}
+	// January order, delivered in December of the previous year: rolls back.
+	got = parseEffectiveDate("December 30", date("2027-01-03"), nil)
+	if got.Format(time.DateOnly) != "2026-12-30" {
+		t.Errorf("Dec 30 anchored to 2027-01-03 order = %s, want 2026-12-30", got.Format(time.DateOnly))
+	}
+	// A full date within 45 days of the order passes through.
+	got = parseEffectiveDate("2027-01-02", date("2026-12-28"), nil)
+	if got.Format(time.DateOnly) != "2027-01-02" {
+		t.Errorf("full date mangled: %s", got.Format(time.DateOnly))
+	}
+	// A full date more than 45 days from the order is dropped — a garbage
+	// full date must not open a wide match range.
+	if !parseEffectiveDate("2027-06-15", date("2026-08-20"), nil).IsZero() {
+		t.Error("far-off full date should be dropped")
+	}
+	// A date more than 45 days from the order in every candidate year is
+	// dropped: a garbage value must not open a match range.
+	got = parseEffectiveDate("July 4", date("2026-08-20"), nil)
+	if !got.IsZero() {
+		t.Errorf("far-off date should be dropped, got %s", got.Format(time.DateOnly))
+	}
+	// Unparseable input drops silently.
+	if !parseEffectiveDate("nonsense", od, nil).IsZero() {
+		t.Error("unparseable input should be dropped")
+	}
+}
+
+// Parsed orders surface the effective date when the scrape supplied one, and
+// leave it zero otherwise.
+func TestParseOrderEffectiveDate(t *testing.T) {
+	got, err := parseOrder(chromedp.Order{
+		Date: "August 20, 2026", Amount: "$9.92", Items: "Liner",
+		EffectiveDate: "August 21",
+	}, []string{"January 2, 2006"})
+	if err != nil {
+		t.Fatalf("parseOrder: %v", err)
+	}
+	if got.EffectiveDate.Format(time.DateOnly) != "2026-08-21" {
+		t.Errorf("effective date = %s, want 2026-08-21", got.EffectiveDate.Format(time.DateOnly))
+	}
+
+	got, err = parseOrder(chromedp.Order{Date: "August 20, 2026", Amount: "10.00"}, defaultDateLayouts)
+	if err != nil {
+		t.Fatalf("parseOrder: %v", err)
+	}
+	if !got.EffectiveDate.IsZero() {
+		t.Errorf("expected zero effective date, got %s", got.EffectiveDate.Format(time.DateOnly))
+	}
+}
+
 // A refund carries a negative total and must resolve against the matching
 // bank credit — amounts are compared on absolute value.
 func TestResolveRefundMatchesCredit(t *testing.T) {

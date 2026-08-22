@@ -381,6 +381,13 @@ type Order struct {
 	Items    string `json:"items"`
 	Category string `json:"category"`
 
+	// EffectiveDate is optional. Vendors that bill at a moment other than the
+	// displayed order date (Amazon bills at shipment, not order) can supply
+	// the date the charge is actually anchored to. When present, matching
+	// uses the range [order date - 1 day, effective date + window] instead of
+	// a symmetric window around the order date.
+	EffectiveDate string `json:"effective_date"`
+
 	// LineItems is optional. When present with two or more priced entries,
 	// the charge can be split per category instead of categorized as a whole.
 	LineItems []OrderLineItem `json:"line_items"`

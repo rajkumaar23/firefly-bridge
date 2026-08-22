@@ -348,6 +348,9 @@ func listVendorOrders(logger *logrus.Logger, cdp *chromedp.ChromeDP, cfg *config
 		vLog.Infof("scraped %d orders:", len(orders))
 		for _, o := range orders {
 			line := fmt.Sprintf("  %s  %10.2f  %s", o.Date.Format(time.DateOnly), float64(o.Cents)/100, o.Items)
+			if !o.EffectiveDate.IsZero() {
+				line += fmt.Sprintf("  (effective %s)", o.EffectiveDate.Format(time.DateOnly))
+			}
 			if o.Category != "" {
 				line += fmt.Sprintf("  [%s]", o.Category)
 			}

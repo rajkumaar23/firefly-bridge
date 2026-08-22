@@ -69,6 +69,11 @@ type Order struct {
 	Cents    int64 // absolute order total in cents
 	Items    string
 	Category string
+	// EffectiveDate is the date the charge is actually anchored to when the
+	// vendor bills at shipment (or another moment) rather than at order
+	// placement. Zero when the vendor's scrape didn't supply one; matching
+	// then falls back to the symmetric window around Date.
+	EffectiveDate time.Time
 	// LineItems is empty unless the vendor's orders JS supplied priced
 	// entries; only lines with a parseable amount are kept.
 	LineItems []LineItem
@@ -139,6 +144,11 @@ func parseOrder(r chromedp.Order, layouts []string) (Order, error) {
 		return Order{}, fmt.Errorf("unparseable amount %q", r.Amount)
 	}
 
+	var eff time.Time
+	if strings.TrimSpace(r.EffectiveDate) != "" {
+		eff = parseEffectiveDate(r.EffectiveDate, date, layouts)
+	}
+
 	var lines []LineItem
 	var names []string
 	for _, li := range r.LineItems {
@@ -162,8 +172,64 @@ func parseOrder(r chromedp.Order, layouts []string) (Order, error) {
 
 	return Order{
 		Date: date, Cents: cents, Items: items,
-		Category: r.Category, LineItems: lines,
+		Category: r.Category, EffectiveDate: eff, LineItems: lines,
 	}, nil
+}
+
+// effectiveDateLayouts are tried when a vendor's effective date carries no
+// year of its own (Amazon's status lines read "Delivered August 21"). The
+// ISO layout is included so vendors that do supply a full date parse
+// directly.
+var effectiveDateLayouts = []string{
+	"2006-01-02",
+	"January 2, 2006",
+	"Jan 2, 2006",
+	"January 2",
+	"Jan 2",
+	"01/02/2006",
+	"01/02",
+}
+
+// parseEffectiveDate parses a vendor-supplied effective (billing/shipment)
+// date. Yearless dates ("August 21") are anchored to the order's year. The
+// anchor prefers the order's own year when it lands within 45 days of the
+// order date, otherwise it rolls to the adjacent year — handling the
+// December order / January delivery wraparound — or drops the date entirely
+// if it still lands more than 45 days out. Full dates are run through the
+// same 45-day sanity check: a garbage full date more than 45 days out must
+// not open a match range either.
+func parseEffectiveDate(s string, orderDate time.Time, layouts []string) time.Time {
+	combined := make([]string, 0, len(layouts)+len(effectiveDateLayouts))
+	combined = append(combined, layouts...)
+	combined = append(combined, effectiveDateLayouts...)
+	parsed, err := parseDate(s, combined)
+	if err != nil {
+		return time.Time{}
+	}
+
+	var candidates []time.Time
+	if parsed.Year() != 0 {
+		// The layout already supplied a full date; only it is a candidate.
+		candidates = []time.Time{parsed}
+	} else {
+		candidates = []time.Time{
+			time.Date(orderDate.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC),
+			time.Date(orderDate.Year()+1, parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC),
+			time.Date(orderDate.Year()-1, parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC),
+		}
+	}
+	var best time.Time
+	bestDiff := time.Duration(0)
+	for _, c := range candidates {
+		diff := c.Sub(orderDate)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff <= 45*24*time.Hour && (best == time.Time{} || diff < bestDiff) {
+			best, bestDiff = c, diff
+		}
+	}
+	return best
 }
 
 func parseDate(s string, layouts []string) (time.Time, error) {

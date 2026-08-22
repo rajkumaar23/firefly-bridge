@@ -59,7 +59,7 @@ func (idx *Index) Resolve(description, amount string, date time.Time) ai.OrderMa
 
 		var hits []Order
 		for _, o := range v.orders {
-			if o.Cents == cents && withinDays(date, o.Date, v.windowDays) {
+			if o.Cents == cents && chargeMatchesOrder(date, o, v.windowDays) {
 				hits = append(hits, o)
 			}
 		}
@@ -96,11 +96,46 @@ func unresolved(vendor, reason string) ai.OrderMatch {
 	return ai.OrderMatch{State: ai.MatchUnresolved, Vendor: vendor, Reason: reason}
 }
 
+// chargeMatchesOrder reports whether a bank charge posted on chargeDate
+// plausibly belongs to o.
+//
+// Orders without an effective date keep the classic symmetric window: the
+// charge must land within ±windowDays of the order date.
+//
+// Orders whose effective (shipment / billing) date is known use the range
+// [min(order, effective) - 1 day, max(order, effective) + windowDays]: the
+// charge can land anywhere from just before the order (immediate billing at
+// checkout) up to a few days after the shipment/delivery that triggered it.
+// The back edge is widened by a day (rather than by windowDays) because a
+// charge posted before the order is only plausible for immediate-billing
+// cases; using the full window there would let a same-amount order a week
+// earlier absorb the charge.
+func chargeMatchesOrder(chargeDate time.Time, o Order, windowDays int) bool {
+	if o.EffectiveDate.IsZero() {
+		return withinDays(chargeDate, o.Date, windowDays)
+	}
+
+	lo, hi := o.Date, o.Date
+	if o.EffectiveDate.Before(o.Date) {
+		lo, hi = o.EffectiveDate, o.Date
+	} else {
+		lo, hi = o.Date, o.EffectiveDate
+	}
+	lo = lo.AddDate(0, 0, -1)
+	hi = hi.AddDate(0, 0, windowDays)
+	c := dayOnly(chargeDate)
+	return !c.Before(dayOnly(lo)) && !c.After(dayOnly(hi))
+}
+
+// dayOnly drops the time-of-day component.
+func dayOnly(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 // withinDays reports whether a and b fall within n calendar days of each
 // other, ignoring the time-of-day component.
 func withinDays(a, b time.Time, n int) bool {
-	ad := time.Date(a.Year(), a.Month(), a.Day(), 0, 0, 0, 0, time.UTC)
-	bd := time.Date(b.Year(), b.Month(), b.Day(), 0, 0, 0, 0, time.UTC)
+	ad, bd := dayOnly(a), dayOnly(b)
 	diff := ad.Sub(bd)
 	if diff < 0 {
 		diff = -diff
