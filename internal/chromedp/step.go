@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/runtime"
@@ -32,6 +33,7 @@ const (
 	StepGetHoldings     StepType = "holdings"
 	StepGetOrders       StepType = "orders"
 	StepEvaluate        StepType = "evaluate"
+	StepWaitSelector    StepType = "wait_selector"
 	StepSkipRemainingIf StepType = "skip_remaining_if"
 )
 
@@ -84,6 +86,8 @@ func (b *BrowserStep) UnmarshalYAML(value *yaml.Node) error {
 		step = &OrdersStep{}
 	case StepEvaluate:
 		step = &EvaluateStep{}
+	case StepWaitSelector:
+		step = &WaitSelectorStep{}
 	case StepSkipRemainingIf:
 		step = &SkipRemainingIfStep{}
 	default:
@@ -441,10 +445,71 @@ func (s EvaluateStep) Execute(c *ChromeDP, results map[StepType]interface{}) err
 	}
 	var discard interface{}
 	if err := chromedp.Run(c.Ctx, chromedp.Evaluate(eval, &discard, awaitPromise)); err != nil {
+		if strings.Contains(err.Error(), "navigated or closed") {
+			err = fmt.Errorf("%w — the target tab navigated away or was closed mid-evaluate; if the browser window was closed manually, restart the run", err)
+		}
 		logger.Errorf("evaluate step failed: %v", err)
 		return err
 	}
 	return nil
+}
+
+// WaitSelectorStep polls until a CSS selector matches in the document, with a
+// bounded timeout. Unlike a single in-page JS polling loop (a long-running
+// `evaluate` expression), it issues many short Go-side evaluates: when the
+// page navigates mid-wait the execution context is destroyed, but the next
+// poll simply lands in the fresh context and keeps counting. Use this for
+// "wait for X to appear" when the page is still redirecting/SPA-routing under
+// us (login gateways, post-login redirects); a bare `evaluate` polling loop
+// dies with "Inspected target navigated or closed" on the first navigation.
+//
+//   - type: wait_selector
+//     selector: "#loginIdInput"
+//     timeout: "45s"      # default 30s
+//     error: "custom failure message"  # default is generated
+type WaitSelectorStep struct {
+	Selector string        `yaml:"selector" validate:"required"`
+	Timeout  time.Duration `yaml:"timeout"`
+	Error    string        `yaml:"error"`
+}
+
+const defaultWaitSelectorTimeout = 30 * time.Second
+
+func (s WaitSelectorStep) Type() StepType {
+	return StepWaitSelector
+}
+
+func (s WaitSelectorStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
+	timeout := s.Timeout
+	if timeout <= 0 {
+		timeout = defaultWaitSelectorTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	logger := utils.GetLogger(c.Ctx)
+
+	for {
+		var found bool
+		err := chromedp.Run(c.Ctx, chromedp.Evaluate(
+			fmt.Sprintf("!!document.querySelector(%q)", s.Selector), &found))
+		if err == nil && found {
+			return nil
+		}
+		// Any evaluate error here is expected churn: the document swapped
+		// out under us (redirect, SPA full-page reload) and the context is
+		// gone, or the new document has not committed yet. chromedp
+		// re-attaches to the target's current context on the next call, so
+		// we keep polling until the deadline instead of aborting.
+		if err != nil {
+			logger.Debugf("wait_selector: transient evaluate error while polling %s: %v", s.Selector, err)
+		}
+		if time.Now().After(deadline) {
+			if s.Error != "" {
+				return errors.New(s.Error)
+			}
+			return fmt.Errorf("selector %s not found within %s", s.Selector, timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // SkipRemainingIfStep evaluates a JS expression and, when the result is
