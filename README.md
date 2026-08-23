@@ -14,6 +14,48 @@ Firefly Bridge fetches transactions and balances directly from financial institu
 
 All institution-specific logic — login flows, CSS selectors, CSV column mappings, and secret references — is defined in a `config.yaml` file, keeping sensitive details private and configuration explicit. See [CONFIG-DSL.md](CONFIG-DSL.md) for a complete reference of every available option.
 
+## Installation
+
+Pre-built binaries are published to [GitHub Releases](https://github.com/rajkumaar23/firefly-bridge/releases) on **every push to `main`** — each release is tagged `sha-<commit>` and contains binaries for macOS and Linux, amd64 and arm64. `checksums.txt` covers every binary.
+
+**Latest release, one-liner** (installs `firefly-bridge` to `~/.local/bin`, verifies the checksum):
+
+```bash
+a="firefly-bridge-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; curl -fsSL -o /tmp/$a "https://github.com/rajkumaar23/firefly-bridge/releases/latest/download/$a" && curl -fsSL "https://github.com/rajkumaar23/firefly-bridge/releases/latest/download/checksums.txt" | grep " $a$" | awk -v d=/tmp '{print $1"  "d"/"$2}' | shasum -a 256 -c - --status && install -m 755 /tmp/$a ~/.local/bin/firefly-bridge
+```
+
+| Platform | Binary |
+|---|---|
+| macOS (Apple Silicon) | `firefly-bridge-darwin-arm64` |
+| macOS (Intel) | `firefly-bridge-darwin-amd64` |
+| Linux | `firefly-bridge-linux-amd64` / `firefly-bridge-linux-arm64` |
+
+The companion tools `portfolio-sync` and `backfill-hashes` are in the same releases — install the same way with their asset names.
+
+### Updating
+
+`firefly-bridge` checks for a newer release (at most once a day, cached) and prints a warning when one is available, including a copy-paste command to install it:
+
+```
+WARN[0000] firefly-bridge sha-722083f is out of date — sha-abc1234 is available (download: https://github.com/.../firefly-bridge-darwin-arm64)
+WARN[0000] to update: curl -fsSL -o /tmp/firefly-bridge-darwin-arm64 '...' && ... | grep " firefly-bridge-darwin-arm64$" | shasum -a 256 -c - --status && install -m 755 /tmp/firefly-bridge-darwin-arm64 ~/.local/bin/firefly-bridge
+```
+
+Any failure to reach GitHub is silent — the check never blocks or delays a sync.
+
+### Data & state files
+
+All persistent data lives in one per-platform directory (no more CWD-scattered files):
+
+| Platform | Directory |
+|---|---|
+| macOS | `~/Library/Caches/firefly-bridge/` |
+| Linux | `$XDG_CACHE_HOME/firefly-bridge/` (default `~/.cache/firefly-bridge/`) |
+
+Contents: `.state.json` (sync state), `chromedp-data/` (browser session — this grows large), `downloads/` (ephemeral), `update-check.json`. If you previously ran from a project directory, the state file and browser profile are copied in automatically on the first run (the old files are left in place). Delete the cache directory to force re-login everywhere.
+
+To build from source instead, `go build ./cmd/firefly-bridge` (Go 1.25+, CGO required for the 1Password SDK) produces a `dev` build: no update check, one info line at startup.
+
 ---
 
 > [!CAUTION]
@@ -90,7 +132,7 @@ firefly-bridge [flags]
 
 ### Runtime directories
 
-Two directories are created automatically alongside the state file at startup:
+Two directories are created automatically alongside the state file at startup (both in the data dir; see the [Installation](#installation) section):
 
 - `downloads/` — temporary landing zone for CSV/Excel files downloaded during browser automation; files are read and then deleted after each sync. Password-protected Excel files are supported via the `password` field in the `excel` step config (plain string, or an `op://` / `bw://` secret reference).
 - `chromedp-data/` — browser user data directory used by the automation session (cookies, cache, local storage). Sessions persist across runs on purpose — it's what lets a login flow use `skip_remaining_if` to skip re-authentication. To explicitly tear one down, add an optional `logout` flow to the institution or vendor entry (see [CONFIG-DSL.md](CONFIG-DSL.md#institutions)).

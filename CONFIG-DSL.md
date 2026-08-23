@@ -444,7 +444,7 @@ vendors:
 
 Two escalating situations, both worth recognising early:
 
-**1. Session persists, login is scriptable.** The normal case. The browser profile lives in `chromedp-data/`, so start the login flow by navigating to an authenticated page and using [`skip_remaining_if`](#skip_remaining_if) to end the flow when you're already signed in. The credential steps then only run when the session has actually expired, and any 2FA challenge you complete by hand survives to later runs.
+**1. Session persists, login is scriptable.** The normal case. The browser profile lives in `chromedp-data/` (in the data dir; see the README Installation section), so start the login flow by navigating to an authenticated page and using [`skip_remaining_if`](#skip_remaining_if) to end the flow when you're already signed in. The credential steps then only run when the session has actually expired, and any 2FA challenge you complete by hand survives to later runs.
 
 **2. Bot detection rejects the browser itself.** Some merchants front sign-in with a bot manager that fingerprints the *browser*, not just the automation. The tell is a sign-in POST that fails with **HTTP 429 or a challenge page even when you type the password by hand**, while the same credentials succeed in your normal browser on the same IP. No selector or timing change fixes this — stop tuning the flow.
 
@@ -1029,7 +1029,7 @@ Async functions are supported; the step awaits any returned Promise before conti
 
 Evaluates a JavaScript expression and, when the result is truthy, ends the current flow early — successfully, skipping every remaining step.
 
-Its main use is at the top of login flows: the browser profile persists between runs (`chromedp-data/`), so a previous session is often still valid and the credential steps would otherwise hang waiting for a login form that never appears. Land on an authenticated page first, then skip the rest of the flow unless you were bounced to the sign-in page.
+Its main use is at the top of login flows: the browser profile persists between runs (`chromedp-data/`, in the data dir; see the README Installation section), so a previous session is often still valid and the credential steps would otherwise hang waiting for a login form that never appears. Land on an authenticated page first, then skip the rest of the flow unless you were bounced to the sign-in page.
 
 ```yaml
 - type: navigate
