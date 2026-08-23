@@ -33,11 +33,12 @@ jobs:
           CGO_ENABLED: 1
           CC: ${{ matrix.goarch == 'arm64' && 'aarch64-linux-gnu-gcc' || 'gcc' }}
         run: |
-          go build -trimpath -ldflags="-s -w" -o firefly-bridge-linux-${{ matrix.goarch }} ./cmd/firefly-bridge
+          LDFLAGS="-s -w -X main.version=sha-${GITHUB_SHA::7} -X main.buildTime=$(git log -1 --format=%cI)"
+          go build -trimpath -ldflags="$LDFLAGS" -o firefly-bridge-linux-${{ matrix.goarch }} ./cmd/firefly-bridge
 
           # backfill-hashes and portfolio-sync has no CGO deps.
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-linux-${{ matrix.goarch }} ./cmd/portfolio-sync
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o backfill-hashes-linux-${{ matrix.goarch }} ./cmd/backfill-hashes
+          CGO_ENABLED=0 go build -trimpath -ldflags="$LDFLAGS" -o portfolio-sync-linux-${{ matrix.goarch }} ./cmd/portfolio-sync
+          CGO_ENABLED=0 go build -trimpath -ldflags="$LDFLAGS" -o backfill-hashes-linux-${{ matrix.goarch }} ./cmd/backfill-hashes
 
       - uses: actions/upload-artifact@v7
         with:
@@ -71,11 +72,12 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 1
         run: |
-          go build -trimpath -ldflags="-s -w" -o firefly-bridge-darwin-${{ matrix.goarch }} ./cmd/firefly-bridge
+          LDFLAGS="-s -w -X main.version=sha-${GITHUB_SHA::7} -X main.buildTime=$(git log -1 --format=%cI)"
+          go build -trimpath -ldflags="$LDFLAGS" -o firefly-bridge-darwin-${{ matrix.goarch }} ./cmd/firefly-bridge
 
           # backfill-hashes and portfolio-sync have no CGO deps.
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o portfolio-sync-darwin-${{ matrix.goarch }} ./cmd/portfolio-sync
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o backfill-hashes-darwin-${{ matrix.goarch }} ./cmd/backfill-hashes
+          CGO_ENABLED=0 go build -trimpath -ldflags="$LDFLAGS" -o portfolio-sync-darwin-${{ matrix.goarch }} ./cmd/portfolio-sync
+          CGO_ENABLED=0 go build -trimpath -ldflags="$LDFLAGS" -o backfill-hashes-darwin-${{ matrix.goarch }} ./cmd/backfill-hashes
 
       - uses: actions/upload-artifact@v7
         with:
@@ -101,6 +103,9 @@ jobs:
           pattern: binaries-*
           merge-multiple: true
 
+      - name: Generate checksums
+        run: shasum -a 256 firefly-bridge-* portfolio-sync-* backfill-hashes-* > checksums.txt
+
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -121,6 +126,7 @@ jobs:
             backfill-hashes-linux-arm64 \
             backfill-hashes-darwin-amd64 \
             backfill-hashes-darwin-arm64 \
+            checksums.txt
 
   docker:
     name: Publish Docker image
