@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -16,24 +18,91 @@ import (
 	"github.com/rajkumaar23/firefly-bridge/internal/ai"
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/config"
+	"github.com/rajkumaar23/firefly-bridge/internal/datadir"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
 	"github.com/rajkumaar23/firefly-bridge/internal/institution"
 	"github.com/rajkumaar23/firefly-bridge/internal/secrets"
 	"github.com/rajkumaar23/firefly-bridge/internal/state"
 	"github.com/rajkumaar23/firefly-bridge/internal/utils"
 	"github.com/rajkumaar23/firefly-bridge/internal/vendor"
+	"github.com/rajkumaar23/firefly-bridge/internal/versioncheck"
 	"github.com/sirupsen/logrus"
+)
+
+// Set by the release workflow via -ldflags; "dev" for local builds.
+var (
+	version   = "dev"
+	buildTime = ""
 )
 
 func main() {
 	os.Exit(run())
 }
 
+// orLocalBuild reports a human-friendly label for an empty build time.
+func orLocalBuild(buildTime string) string {
+	if buildTime == "" {
+		return "local build"
+	}
+	return buildTime
+}
+
+func checkForUpdate(logger *logrus.Logger) {
+	// Dev/local builds: no nudge — just a single info line so the user
+	// knows they're not on a release binary (per plan: "dev builds ok, do
+	// NOT nudge").
+	if version == "" || version == "dev" {
+		logger.Info("running a local/dev build — release binaries are available on GitHub; no update check performed")
+		return
+	}
+	c, err := versioncheck.New(versioncheck.Options{
+		Version:   version,
+		BuildTime: buildTime,
+		CachePath: datadir.UpdateCacheFile(),
+	})
+	if err != nil {
+		return // versioncheck.New only errors on a bad cache path — stay silent
+	}
+	res, _ := c.Check() // Check never errors by design
+	if !res.Updated {
+		return
+	}
+	logger.Warnf("firefly-bridge %s is out of date — %s is available (download: %s)", version, res.LatestTag, res.DownloadURL)
+	logger.Warnf("to update: %s", installOneLiner(res.DownloadURL))
+}
+
+// installOneLiner prints a single copy-paste command that downloads the
+// latest release, verifies its checksum against the release's
+// checksums.txt, and installs it. This is the user-facing update path for
+// v1 — see the TODO on autoSelfUpdate below for the in-binary follow-up.
+func installOneLiner(downloadURL string) string {
+	repo := versioncheck.RepoPath()
+	asset := versioncheck.BinaryAssetName()
+	return fmt.Sprintf(
+		"a=%s && curl -fsSL -o /tmp/$a '%s' && curl -fsSL 'https://github.com/%s/releases/latest/download/checksums.txt' | grep \" $a$\" | awk -v d=/tmp '{print $1\"  \"d\"/\"$2}' | shasum -a 256 -c - --status && install -m 755 /tmp/$a ~/.local/bin/firefly-bridge",
+		asset, downloadURL, repo,
+	)
+}
+
+// TODO(autoSelfUpdate): with the user's explicit permission (a `-y` or an
+// interactive "Install update now? [y/N]"), download the asset to a temp
+// file, verify it against the release's checksums.txt (crypto/sha256 —
+// the dependency is stdlib; checksums.txt is added by Task 1), then
+// os.Rename() it over os.Executable(). On Unix the running process keeps
+// executing from the old inode after the rename (verified: the kernel
+// keeps the inode alive until exit), so the current run is unaffected and
+// the new binary is in place on the next invocation. Also verify the
+// target path is writable and warn if it isn't (e.g. /usr/local/bin under
+// sudo). Deferred to a follow-up task: it needs an interactive prompt, a
+// sudo/sudoers story for system-wide installs, and a backup of the
+// previous binary (rename-aside to <binary>.bak) in case the new one is
+// broken. v1 ships the one-liner instead.
+
 func run() int {
 	var cdpDebug = flag.Bool("cdp-debug", false, "enable chromedp debug logs")
 	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
-	var statePath = flag.String("state", ".state.json", "path to the file used to track last successful run per institution")
+	var statePath = flag.String("state", datadir.StateFile(), "path to the state file (default: data dir)")
 	var force = flag.Bool("force", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
 	var forceSyncDays = flag.Int("sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
 	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")
@@ -41,7 +110,13 @@ func run() int {
 	var csvDebug = flag.Bool("csv-debug", false, "log every parsed CSV row with its row number to help diagnose parsing issues")
 	var vendorsFlag = flag.String("vendors", "", "scrape configured vendors' order history to categorize their charges from what was actually bought; \"all\" or a comma-separated list of vendor names, empty disables vendor scraping")
 	var listOrders = flag.Bool("list-orders", false, "log in to the configured vendors, print their scraped orders, and exit without syncing any institution; combine with -vendors to restrict which vendors run (default all)")
+	var showVersion = flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("firefly-bridge %s (built %s, %s/%s)\n", version, orLocalBuild(buildTime), runtime.GOOS, runtime.GOARCH)
+		return 0
+	}
 
 	ctx := context.Background()
 
@@ -52,6 +127,8 @@ func run() int {
 		logger.Debugf("log level set to debug")
 	}
 
+	checkForUpdate(logger)
+
 	ctx = utils.WithLogger(ctx, logger)
 
 	cfg, err := config.NewConfig(*configPath)
@@ -59,6 +136,39 @@ func run() int {
 		logger.Panicf("failed to load config: %s", err.Error())
 	}
 	logger.Debug("loaded config")
+
+	mustDataDir, err := datadir.Dir()
+	if err != nil {
+		// Degrade to legacy CWD-relative paths; everything still works.
+		logger.Warnf("could not determine data dir (%v); using CWD-relative paths", err)
+		mustDataDir, _ = os.Getwd()
+	}
+
+	// One-time migration: if the user is on the default state path and a
+	// legacy CWD .state.json exists, copy it into the data dir once.
+	if *statePath == datadir.StateFile() {
+		legacy := ".state.json"
+		if data, err := os.ReadFile(legacy); err == nil {
+			dest := filepath.Join(mustDataDir, ".state.json")
+			if _, err := os.Stat(dest); os.IsNotExist(err) {
+				if err := os.WriteFile(dest, data, 0o644); err == nil {
+					logger.Infof("migrated %s → %s (original left in place)", legacy, dest)
+				}
+			}
+		}
+		// Same for the browser profile: copy CWD chromedp-data/ if the
+		// data-dir profile doesn't exist yet. Sessions survive so the
+		// user is not re-logged-out of every institution.
+		legacyProfile := "chromedp-data"
+		if st, err := os.Stat(legacyProfile); err == nil && st.IsDir() {
+			destProfile := filepath.Join(mustDataDir, "chromedp-data")
+			if _, err := os.Stat(destProfile); os.IsNotExist(err) {
+				if err := datadir.CopyDir(legacyProfile, destProfile); err == nil {
+					logger.Infof("migrated browser profile %s → %s (original left in place)", legacyProfile, destProfile)
+				}
+			}
+		}
+	}
 
 	secretManager, err := secrets.NewManagerFromConfig(ctx, cfg.Secrets)
 	if err != nil {
@@ -85,7 +195,7 @@ func run() int {
 		logger.Info("AI categorizer enabled")
 	}
 
-	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug, secretManager)
+	cdp, err := chromedp.NewChromeDP(ctx, logger, cfg.BrowserExecPath, cfg.GetDownloadCount(), *cdpDebug, secretManager, mustDataDir)
 	cdp.CSVDebug = *csvDebug
 	if err != nil {
 		logger.Panicf("failed to setup chromedp: %s", err.Error())

@@ -26,10 +26,17 @@ type ChromeDP struct {
 	secretResolver  utils.SecretResolver
 }
 
-func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads int, debug bool, secretResolver utils.SecretResolver) (cdp *ChromeDP, err error) {
-	workingDir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
+// NewChromeDP starts a chromedp session. dataDir is the directory that holds
+// the browser profile (chromedp-data/) and downloads/; pass "" to use the
+// current working directory (legacy behavior, used by dev-only tools).
+func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath string, downloads int, debug bool, secretResolver utils.SecretResolver, dataDir string) (cdp *ChromeDP, err error) {
+	if dataDir == "" {
+		if dataDir, err = os.Getwd(); err != nil {
+			return nil, fmt.Errorf("failed to get working directory: %w", err)
+		}
+	}
+	if err = os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
 	opts := append(
@@ -38,7 +45,7 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 		chromedp.DisableGPU,
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("disable-extensions", false),
-		chromedp.UserDataDir(filepath.Join(workingDir, "chromedp-data")),
+		chromedp.UserDataDir(filepath.Join(dataDir, "chromedp-data")),
 		chromedp.ExecPath(browserExecPath),
 	)
 
@@ -61,11 +68,11 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 	ctx, cancel := chromedp.NewExecAllocator(ctx, opts...)
 	ctx, cancel2 := chromedp.NewContext(ctx, chromedp.WithDebugf(debugFn), chromedp.WithErrorf(errorFn))
 
-	downloadsDir := filepath.Join(workingDir, "downloads")
+	downloadsDir := filepath.Join(dataDir, "downloads")
 	cdp = &ChromeDP{
 		Ctx:             ctx,
 		cancelFuncs:     []context.CancelFunc{cancel, cancel2},
-		workingDir:      workingDir,
+		workingDir:      dataDir,
 		downloadPath:    downloadsDir,
 		downloadChannel: make(chan string),
 		secretResolver:  secretResolver,

@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,12 +20,28 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Set by the release workflow via -ldflags; "dev" for local builds.
+var (
+	version   = "dev"
+	buildTime = ""
+)
+
 func main() {
 	var debug = flag.Bool("debug", false, "enable debug logs")
+	var showVersion = flag.Bool("version", false, "print version information and exit")
 	var host = flag.String("host", "", "firefly host (eg: http://firefly.lan.example.com), alternative to setting it via environment $FIREFLY_HOST")
 	var token = flag.String("token", "", "firefly access token, alternative to setting it via environment $FIREFLY_TOKEN")
 	var defaultCategory = flag.String("category", "P&L", "default category for transactions created by this tool")
 	flag.Parse()
+
+	if *showVersion {
+		built := buildTime
+		if built == "" {
+			built = "local build"
+		}
+		fmt.Printf("portfolio-sync %s (built %s, %s/%s)\n", version, built, runtime.GOOS, runtime.GOARCH)
+		return
+	}
 
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.TextFormatter{FullTimestamp: true, ForceColors: true})
