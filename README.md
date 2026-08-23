@@ -18,10 +18,10 @@ All institution-specific logic — login flows, CSS selectors, CSV column mappin
 
 Pre-built binaries are published to [GitHub Releases](https://github.com/rajkumaar23/firefly-bridge/releases) on **every push to `main`** — each release is tagged `sha-<commit>` and contains binaries for macOS and Linux, amd64 and arm64. `checksums.txt` covers every binary.
 
-**Latest release, one-liner** (installs `firefly-bridge` to `~/.local/bin`, verifies the checksum):
+**Latest release, one-liner** (detects your OS/arch, verifies the checksum, and installs `firefly-bridge` to `/usr/local/bin` if writable, otherwise `~/.local/bin`):
 
 ```bash
-a="firefly-bridge-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; curl -fsSL -o /tmp/$a "https://github.com/rajkumaar23/firefly-bridge/releases/latest/download/$a" && curl -fsSL "https://github.com/rajkumaar23/firefly-bridge/releases/latest/download/checksums.txt" | grep " $a$" | awk -v d=/tmp '{print $1"  "d"/"$2}' | shasum -a 256 -c - --status && install -m 755 /tmp/$a ~/.local/bin/firefly-bridge
+curl -fsSL https://raw.githubusercontent.com/rajkumaar23/firefly-bridge/main/install.sh | bash
 ```
 
 | Platform | Binary |
