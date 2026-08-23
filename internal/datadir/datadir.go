@@ -40,6 +40,23 @@ func StateFile() string { return join(".state.json") }
 // ProfileDir is the chromedp user-data directory (persistent browser session).
 func ProfileDir() string { return join("chromedp-data") }
 
+// IsProfile reports whether dir is a non-empty chromedp user-data directory.
+// A real profile always contains a Default/ profile subdir; an empty or
+// brand-new directory (created by MkdirAll before the browser first runs)
+// does not yet, which is how we tell "profile exists" from "not started".
+func IsProfile(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() && e.Name() == "Default" {
+			return true
+		}
+	}
+	return false
+}
+
 // DownloadsDir is the ephemeral browser download landing zone.
 func DownloadsDir() string { return join("downloads") }
 

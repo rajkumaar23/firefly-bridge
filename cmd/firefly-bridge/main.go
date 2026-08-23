@@ -144,27 +144,46 @@ func run() int {
 		mustDataDir, _ = os.Getwd()
 	}
 
-	// One-time migration: if the user is on the default state path and a
-	// legacy CWD .state.json exists, copy it into the data dir once.
+	// One-time migration to the central data dir. The old binary stored
+	// everything CWD-relative; a CWD-relative first-run migration can't see
+	// the user's data when the release binary runs from the home directory
+	// (or anywhere else), so instead of guessing, ask interactively.
+	// .state.json: copy it from CWD when it exists and the data dir's copy
+	// does not — safe, non-destructive, and covers the common case where
+	// the user launches from the project directory.
 	if *statePath == datadir.StateFile() {
 		legacy := ".state.json"
 		if data, err := os.ReadFile(legacy); err == nil {
 			dest := filepath.Join(mustDataDir, ".state.json")
 			if _, err := os.Stat(dest); os.IsNotExist(err) {
-				if err := os.WriteFile(dest, data, 0o644); err == nil {
+				if err := os.WriteFile(dest, data, 0o644); err != nil {
+					logger.Warnf("could not migrate %s → %s: %v", legacy, dest, err)
+				} else {
 					logger.Infof("migrated %s → %s (original left in place)", legacy, dest)
 				}
 			}
 		}
-		// Same for the browser profile: copy CWD chromedp-data/ if the
-		// data-dir profile doesn't exist yet. Sessions survive so the
-		// user is not re-logged-out of every institution.
-		legacyProfile := "chromedp-data"
-		if st, err := os.Stat(legacyProfile); err == nil && st.IsDir() {
-			destProfile := filepath.Join(mustDataDir, "chromedp-data")
-			if _, err := os.Stat(destProfile); os.IsNotExist(err) {
-				if err := datadir.CopyDir(legacyProfile, destProfile); err == nil {
-					logger.Infof("migrated browser profile %s → %s (original left in place)", legacyProfile, destProfile)
+	}
+
+	// Browser profile: if none exists in the data dir yet, ask whether the
+	// user has used an older install and, if so, where its CWD-relative
+	// profile lives; then copy it (original left in place). Headless-safe:
+	// a closed stdin starts a fresh profile instead of blocking.
+	legacyProfileDir, err := ensureBrowserProfile(mustDataDir, logger, os.Stdin)
+	if err != nil {
+		logger.Panicf("failed to prepare browser profile: %s", err.Error())
+	}
+	// If the user pointed at a legacy project directory, carry over its
+	// .state.json too when the data dir has none yet.
+	if legacyProfileDir != "" && *statePath == datadir.StateFile() {
+		legacy := filepath.Join(filepath.Dir(legacyProfileDir), ".state.json")
+		if data, err := os.ReadFile(legacy); err == nil {
+			dest := filepath.Join(mustDataDir, ".state.json")
+			if _, err := os.Stat(dest); os.IsNotExist(err) {
+				if err := os.WriteFile(dest, data, 0o644); err != nil {
+					logger.Warnf("could not migrate %s → %s: %v", legacy, dest, err)
+				} else {
+					logger.Infof("migrated %s → %s (original left in place)", legacy, dest)
 				}
 			}
 		}

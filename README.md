@@ -52,7 +52,7 @@ All persistent data lives in one per-platform directory (no more CWD-scattered f
 | macOS | `~/Library/Caches/firefly-bridge/` |
 | Linux | `$XDG_CACHE_HOME/firefly-bridge/` (default `~/.cache/firefly-bridge/`) |
 
-Contents: `.state.json` (sync state), `chromedp-data/` (browser session — this grows large), `downloads/` (ephemeral), `update-check.json`. If you previously ran from a project directory, the state file and browser profile are copied in automatically on the first run (the old files are left in place). Delete the cache directory to force re-login everywhere.
+Contents: `.state.json` (sync state), `chromedp-data/` (browser session — this grows large), `downloads/` (ephemeral), `update-check.json`. On the first run with an upgraded binary, if no browser profile exists yet in the data dir, firefly-bridge asks whether you have used an older install: if yes, it asks for the project directory that holds the old `chromedp-data/` (usually the cloned repo directory) and copies it in, carrying over the `.state.json` next to it — the original files are left in place, so your logged-in sessions survive. If no (or on a non-interactive run such as cron), a fresh profile is started. If you run from a directory that still has an old `.state.json`, it is copied into the data dir automatically. Delete the cache directory to force re-login everywhere.
 
 To build from source instead, `go build ./cmd/firefly-bridge` (Go 1.25+, CGO required for the 1Password SDK) produces a `dev` build: no update check, one info line at startup.
 

@@ -65,3 +65,20 @@ func TestCopyDirMissingSource(t *testing.T) {
 		t.Error("expected error copying a non-existent source")
 	}
 }
+
+func TestIsProfile(t *testing.T) {
+	empty := t.TempDir()
+	if IsProfile(empty) {
+		t.Error("a freshly created empty dir must not count as a profile")
+	}
+	withDefault := filepath.Join(empty, "p")
+	if err := os.MkdirAll(filepath.Join(withDefault, "Default"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !IsProfile(withDefault) {
+		t.Error("a dir with a Default/ subdir must count as a profile")
+	}
+	if IsProfile(filepath.Join(empty, "missing")) {
+		t.Error("a missing dir must not count as a profile")
+	}
+}
