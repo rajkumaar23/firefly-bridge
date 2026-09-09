@@ -137,6 +137,8 @@ func run() int {
 	}
 	logger.Debug("loaded config")
 
+	ctx = utils.WithTimeLocation(ctx, cfg.TimezoneLocation())
+
 	mustDataDir, err := datadir.Dir()
 	if err != nil {
 		// Degrade to legacy CWD-relative paths; everything still works.

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/rajkumaar23/firefly-bridge/internal/ai"
@@ -32,8 +33,26 @@ type Config struct {
 	Secrets         *secrets.SecretsConfig    `yaml:"secrets,omitempty"`
 	AI              *ai.Config                `yaml:"ai,omitempty"`
 	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"file"`
+	Timezone        string                    `yaml:"timezone,omitempty"`
 	Institutions    []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
 	Vendors         []vendor.Vendor           `yaml:"vendors,omitempty" validate:"omitempty,dive"`
+}
+
+// TimezoneLocation returns the location used to anchor date-only values
+// (e.g. a CSV "Trans. Date") so the resulting instant matches the day it will
+// be shown in. It resolves the config `timezone` IANA name, falls back to the
+// host's local zone, and only then to UTC — never trusting a zone that the
+// runtime happens to default to.
+func (c *Config) TimezoneLocation() *time.Location {
+	if c.Timezone != "" {
+		if loc, err := time.LoadLocation(c.Timezone); err == nil {
+			return loc
+		}
+	}
+	if time.Local != nil {
+		return time.Local
+	}
+	return time.UTC
 }
 
 func (c *Config) Validate() error {

@@ -260,7 +260,7 @@ func (p *Parser) getDate(record []string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("date column index out of bounds")
 	}
 	dateStr := strings.TrimSpace(record[p.config.Date.Column-1])
-	return utils.ParseLocalDateFromString(p.config.Date.Format, dateStr)
+	return utils.ParseLocalDateFromString(p.config.Date.Format, dateStr, utils.TimeLocationFromContext(p.ctx))
 }
 
 func (p *Parser) getAmount(record []string) (amount float64, err error) {
