@@ -17,6 +17,7 @@ This document is a complete reference for every attribute and feature available 
   - [Secret References in Values](#secret-references-in-values)
 - [`ai`](#ai)
 - [`browser_exec_path`](#browser_exec_path)
+- [`timezone`](#timezone)
 - [`institutions`](#institutions)
   - [Institution Fields](#institution-fields)
   - [`accounts`](#accounts)
@@ -111,6 +112,8 @@ ai:               # optional
 
 browser_exec_path: "/path/to/chrome"  # required
 
+timezone: "America/Los_Angeles"  # optional
+
 institutions:     # required, minimum 1
   - name: "..."
     login: [...]
@@ -130,6 +133,7 @@ vendors:          # optional
 | `secrets` | object | no | Secret provider configuration |
 | `ai` | object | no | AI-assisted category/budget assignment |
 | `browser_exec_path` | string | yes | Absolute path to the browser executable used for automation |
+| `timezone` | string | no | IANA zone that date-only values are anchored to (see [`timezone`](#timezone)) |
 | `institutions` | array | yes (min 1) | List of financial institutions to sync |
 | `vendors` | array | no | Merchants whose order history is scraped on demand to categorize ambiguous charges |
 
@@ -304,6 +308,20 @@ Common paths:
 |---|---|
 | macOS | `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser` |
 | Linux | `/usr/bin/brave-browser` |
+
+---
+
+## `timezone`
+
+```yaml
+timezone: "America/Los_Angeles"
+```
+
+Optional. IANA time zone name (e.g. `America/Los_Angeles`, `Asia/Kolkata`) used as the **anchor zone for date-only values** — a CSV `date` column like `09/08/2026` has no time or zone, so the bridge has to invent one when turning it into the RFC 3339 instant sent to Firefly. It is parsed as midnight in this zone, which keeps the transaction on the same calendar day Firefly displays, including daylight-saving changes.
+
+Set it to the **display zone you want transactions anchored to** — the zone Firefly itself shows dates in — not the institution's home zone. Anchoring to the bank's zone (e.g. `Asia/Kolkata` for an Indian card statement) can shift the day once Firefly re-displays it in yours. One top-level value covers every institution and vendor.
+
+Resolution order: `timezone` → the host's local zone → UTC. An unknown or misspelled zone name falls back silently to the host's local zone, so double-check the spelling against the [IANA list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). When omitted, date-only values anchor to the machine's local zone — on a server running UTC (common for containers and CI), a statement dated for a US timezone lands on the **previous** day in Firefly, so set this explicitly whenever the process zone and your display zone differ.
 
 ---
 
@@ -812,7 +830,7 @@ fields:
 |---|---|---|
 | `date` | yes | Transaction date. |
 | `date.column` | yes | Column number containing the date string. |
-| `date.format` | yes | Go `time.Parse` layout for parsing the date (see [Go time formats](https://pkg.go.dev/time#Layout)). Common formats: `"01/02/2006"` (MM/DD/YYYY), `"2006-01-02"` (ISO 8601), `"1/2/06"` (M/D/YY). |
+| `date.format` | yes | Go `time.Parse` layout for parsing the date (see [Go time formats](https://pkg.go.dev/time#Layout)). Common formats: `"01/02/2006"` (MM/DD/YYYY), `"2006-01-02"` (ISO 8601), `"1/2/06"` (M/D/YY). Date-only values are anchored to midnight in the configured [`timezone`](#timezone). |
 | `description` | yes | Transaction description/merchant name. |
 | `description.column` | yes | Column number. |
 | `category` | no | Transaction category. Mapped to the Firefly category name. |

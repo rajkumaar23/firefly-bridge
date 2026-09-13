@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/rajkumaar23/firefly-bridge/main/ins
 | macOS (Intel) | `firefly-bridge-darwin-amd64` |
 | Linux | `firefly-bridge-linux-amd64` / `firefly-bridge-linux-arm64` |
 
-The companion tools `portfolio-sync` and `backfill-hashes` are in the same releases — install the same way with their asset names.
+The one-liner installs `firefly-bridge` only. The companion tools `portfolio-sync` and `backfill-hashes` are published in the same releases — download `portfolio-sync-<os>-<arch>` / `backfill-hashes-<os>-<arch>` and `checksums.txt` from the [release page](https://github.com/rajkumaar23/firefly-bridge/releases/latest), verify the checksum, and drop them next to `firefly-bridge`.
 
 ### Updating
 
@@ -52,7 +52,7 @@ All persistent data lives in one per-platform directory (no more CWD-scattered f
 | macOS | `~/Library/Caches/firefly-bridge/` |
 | Linux | `$XDG_CACHE_HOME/firefly-bridge/` (default `~/.cache/firefly-bridge/`) |
 
-Contents: `.state.json` (sync state), `chromedp-data/` (browser session — this grows large), `downloads/` (ephemeral), `update-check.json`. On the first run with an upgraded binary, if no browser profile exists yet in the data dir, firefly-bridge asks whether you have used an older install: if yes, it asks for the project directory that holds the old `chromedp-data/` (usually the cloned repo directory) and copies it in, carrying over the `.state.json` next to it — the original files are left in place, so your logged-in sessions survive. If no (or on a non-interactive run such as cron), a fresh profile is started. If you run from a directory that still has an old `.state.json`, it is copied into the data dir automatically. Delete the cache directory to force re-login everywhere.
+Contents: `.state.json` (sync state), `chromedp-data/` (browser session — this grows large), `downloads/` (ephemeral), `update-check.json`. On the first run with an upgraded binary, if no browser profile exists yet in the data dir, firefly-bridge asks whether you have used an older install: if yes, it asks for the project directory that holds the old `chromedp-data/` (usually the cloned repo directory — both `<project>` and `<project>/chromedp-data` are accepted; press Enter to skip and start fresh) and copies it in, carrying over the `.state.json` next to it — the original files are left in place, so your logged-in sessions survive. If no (or on a non-interactive run such as cron), a fresh profile is started. If you run from a directory that still has an old `.state.json`, it is copied into the data dir automatically. Delete the cache directory to force re-login everywhere.
 
 To build from source instead, `go build ./cmd/firefly-bridge` (Go 1.25+, CGO required for the 1Password SDK) produces a `dev` build: no update check, one info line at startup.
 
@@ -97,7 +97,9 @@ backfill-hashes [flags]
 |---|---|---|---|
 | `--host` | string | `""` | Firefly host URL. Can also be set via `$FIREFLY_HOST`. |
 | `--token` | string | `""` | Firefly personal access token. Can also be set via `$FIREFLY_TOKEN`. |
+| `--concurrency` | int | `5` | Max concurrent update requests per account. |
 | `--debug` | bool | `false` | Enable verbose debug logging. |
+| `--version` | bool | `false` | Print version information and exit. |
 
 For each asset account the tool will display the number of transaction groups and individual splits that are missing `internal_reference`, then ask:
 
@@ -119,7 +121,7 @@ firefly-bridge [flags]
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `-config` | string | `"config.yaml"` | Path to the YAML configuration file. See [CONFIG-DSL.md](CONFIG-DSL.md). |
-| `-state` | string | `".state.json"` | Path to the state file that tracks the last successful run per institution and account. |
+| `-state` | string | data dir `.state.json` | Path to the state file that tracks the last successful run per institution and account (default: `.state.json` inside the [data directory](#data--state-files)). |
 | `-institution` | string | `""` | Run only the institution with this exact name (case-sensitive). Skips all other institutions and also bypasses cooldown and balance-unchanged checks for the specified institution. |
 | `-skip` | string | `""` | Comma-separated list of institution names (case-sensitive) to skip. All other institutions run normally. |
 | `-force` | bool | `false` | Bypass the per-institution cooldown and the per-account balance-unchanged skip. Forces a full sync of every institution and account regardless of state. |
@@ -129,6 +131,7 @@ firefly-bridge [flags]
 | `-csv-debug` | bool | `false` | Log every parsed CSV/Excel row with its row number. Useful for diagnosing `skip_head_rows`, `skip_tail_rows`, and column index issues. |
 | `-vendors` | string | `""` | Scrape the configured [vendors'](CONFIG-DSL.md#vendors) order history before the sync so their charges are categorized from what was actually bought. `"all"` or a comma-separated list of vendor names; empty disables vendor scraping. Requires `ai.enabled`. |
 | `-list-orders` | bool | `false` | Log in to the configured vendors, print every scraped order, and exit without syncing any institution. Combine with `-vendors` to restrict which vendors run (default all). Useful for tuning the `orders` step selectors. |
+| `-version` | bool | `false` | Print version information (release tag, build time, platform) and exit. |
 
 ### Runtime directories
 
@@ -142,6 +145,18 @@ Two directories are created automatically alongside the state file at startup (b
 ## Portfolio Sync
 
 `portfolio-sync` is a companion service that fetches current market prices for the securities stored in your Firefly investment account notes and creates Profit/Loss transactions in Firefly III. Unlike `firefly-bridge` (which requires a browser and user interaction to download statements), `portfolio-sync` is fully headless and designed to run on a schedule.
+
+```
+portfolio-sync [flags]
+```
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--host` | string | `""` | Firefly host URL. Can also be set via `$FIREFLY_HOST`. |
+| `--token` | string | `""` | Firefly personal access token. Can also be set via `$FIREFLY_TOKEN`. |
+| `--category` | string | `"P&L"` | Default category for transactions created by this tool. |
+| `--debug` | bool | `false` | Enable verbose debug logging. |
+| `--version` | bool | `false` | Print version information and exit. |
 
 ### Running as a cron job with Docker Compose
 

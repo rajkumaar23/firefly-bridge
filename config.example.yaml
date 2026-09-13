@@ -62,6 +62,14 @@ ai:
 browser_exec_path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
 # Linux: browser_exec_path: "/usr/bin/brave-browser"
 
+# ── Date-anchoring timezone (optional) ───────────────────────────────────────
+# IANA zone that date-only values (e.g. a CSV "Trans. Date" column) are parsed
+# as midnight in, so they land on the same calendar day Firefly displays —
+# even when this machine's process zone differs (containers often run UTC).
+# Set it to your Firefly display zone, not the bank's home zone.
+# Omit to fall back to the host's local zone.
+timezone: "America/Los_Angeles"
+
 # ── Institutions ──────────────────────────────────────────────────────────────
 # Institutions can also be loaded from external files with the !import tag:
 #   institutions:
