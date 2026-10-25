@@ -63,6 +63,14 @@ type Config struct {
 	// models' context windows. Defaults to 5 when unset.
 	MaxExamples int `yaml:"max_examples"`
 
+	// SystemPrompt is extra guidance appended verbatim to the built-in system
+	// prompt of every model call. Use it to encode personal conventions —
+	// "parking is Car", "budget must be consistent with the category", which
+	// merchant strings mean what. The JSON reply contract and allowed-list
+	// instructions are built in and cannot be replaced from config; this only
+	// adds to them.
+	SystemPrompt string `yaml:"system_prompt"`
+
 	// TimeoutSeconds bounds each chat-completion request. Defaults to 30.
 	TimeoutSeconds int `yaml:"timeout_seconds"`
 }

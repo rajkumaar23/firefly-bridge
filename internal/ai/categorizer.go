@@ -233,6 +233,9 @@ func (c *Categorizer) askModel(ctx context.Context, txn *firefly.TransactionSpli
 			"If nothing fits, use an empty string. Never invent names that are not in the lists."
 		fmt.Fprintf(&b, "Transaction: %q, type %s, amount %s\n", desc, txn.Type, txn.Amount)
 	}
+	if strings.TrimSpace(c.cfg.SystemPrompt) != "" {
+		system += "\n" + strings.TrimSpace(c.cfg.SystemPrompt)
+	}
 	if wantCategory {
 		fmt.Fprintf(&b, "Allowed categories: %s\n", strings.Join(c.categories, ", "))
 		// A non-empty value here is the source/bank label (reuse-first didn't

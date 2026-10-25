@@ -88,6 +88,41 @@ func TestNonOrderPromptKeepsTransactionFraming(t *testing.T) {
 	}
 }
 
+// A user's own conventions ride along on every call, plain and order alike.
+func TestConfigSystemPromptIsAppendedToBothCallShapes(t *testing.T) {
+	c, prompts := stubModel(t, `{"vendor":"","category":"Car","budget":"Car"}`)
+	c.cfg.SystemPrompt = "  Parking and anything car-related belongs to Car/Car.  \n"
+
+	txn := testTxn("14.38")
+	if err := c.askModel(context.Background(), txn, txn.Description, nil, true, true, false); err != nil {
+		t.Fatalf("askModel: %v", err)
+	}
+	if !strings.Contains((*prompts)[0], "Parking and anything car-related belongs to Car/Car.") {
+		t.Error("plain-transaction system prompt should carry the configured guidance")
+	}
+	// The built-in reply contract must precede the user's guidance: config
+	// can only add to the prompt, never displace the JSON contract.
+	if i, j := strings.Index((*prompts)[0], `Reply with ONLY a JSON object`), strings.Index((*prompts)[0], "Parking and anything car-related"); i < 0 || j < 0 || i > j {
+		t.Error("appended guidance must come after the built-in JSON reply contract")
+	}
+	// Trimmed, not verbatim-with-padding.
+	if strings.Contains((*prompts)[0], "  Parking") {
+		t.Error("system prompt should be trimmed")
+	}
+
+	c.resolver = fakeResolver{OrderMatch{State: MatchResolved, Vendor: "ParkCo", Items: "GARAGE 3HR"}}
+	txn2 := testTxn("14.38")
+	if _, err := c.Enrich(context.Background(), txn2); err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if len(*prompts) != 2 {
+		t.Fatalf("expected a second model call, got %d", len(*prompts))
+	}
+	if !strings.Contains((*prompts)[1], "Parking and anything car-related belongs to Car/Car.") {
+		t.Error("order/goods system prompt should also carry the configured guidance")
+	}
+}
+
 // Vendors describe items very differently — till receipts abbreviate, online
 // stores publish padded catalogue titles. Rather than detecting the style in
 // code, one prompt has to cover both.
