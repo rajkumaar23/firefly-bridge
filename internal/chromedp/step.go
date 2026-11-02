@@ -281,9 +281,9 @@ func (s BalanceStep) Execute(c *ChromeDP, results map[StepType]interface{}) erro
 	if s.Selector != "" {
 		action = chromedp.Text(s.Selector, &result)
 	} else if s.Evaluate != "" {
-		eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
+		eval, err := c.prepareScript(s.Evaluate)
 		if err != nil {
-			return fmt.Errorf("failed to resolve secret refs: %w", err)
+			return err
 		}
 		action = chromedp.Evaluate(eval, &result, awaitPromise)
 	} else {
@@ -406,9 +406,9 @@ func (s OrdersStep) Type() StepType {
 }
 
 func (s OrdersStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
-	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
+	eval, err := c.prepareScript(s.Evaluate)
 	if err != nil {
-		return fmt.Errorf("failed to resolve secret refs: %w", err)
+		return err
 	}
 
 	// Capture the raw JSON first so the exact payload can be logged when the
@@ -434,6 +434,24 @@ func (s OrdersStep) Execute(c *ChromeDP, results map[StepType]interface{}) error
 	return nil
 }
 
+// prepareScript preprocesses user-authored JavaScript before it reaches the
+// page: it resolves embedded secret references (op://…, bw://…) anywhere in
+// the string, then expands date templates ({{ Today "01/02/2006" }},
+// {{ SubtractDays 30 "January 2006" }}). Template expansion is separate from
+// ParseTemplate because JS legitimately contains "://" (fetch targets), which
+// ParseTemplate's whole-value secret probe would misread as a provider scheme.
+func (c *ChromeDP) prepareScript(s string) (string, error) {
+	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve secret refs: %w", err)
+	}
+	eval, err = utils.RenderTemplate(eval)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+	return eval, nil
+}
+
 // EvaluateStep runs arbitrary JavaScript on the page and discards the result.
 // Use this for side-effectful JS (e.g. triggering a download, clicking via JS).
 type EvaluateStep struct {
@@ -446,9 +464,9 @@ func (s EvaluateStep) Type() StepType {
 
 func (s EvaluateStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
 	logger := utils.GetLogger(c.Ctx)
-	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
+	eval, err := c.prepareScript(s.Evaluate)
 	if err != nil {
-		return fmt.Errorf("failed to resolve secret refs: %w", err)
+		return err
 	}
 	var discard interface{}
 	if err := chromedp.Run(c.Ctx, chromedp.Evaluate(eval, &discard, awaitPromise)); err != nil {
@@ -533,9 +551,9 @@ func (s SkipRemainingIfStep) Type() StepType {
 }
 
 func (s SkipRemainingIfStep) Execute(c *ChromeDP, results map[StepType]interface{}) error {
-	eval, err := c.secretResolver.ResolveRefs(c.Ctx, s.Evaluate)
+	eval, err := c.prepareScript(s.Evaluate)
 	if err != nil {
-		return fmt.Errorf("failed to resolve secret refs: %w", err)
+		return err
 	}
 
 	var result interface{}

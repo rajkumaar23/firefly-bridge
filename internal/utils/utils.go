@@ -46,9 +46,17 @@ func ParseTemplate(ctx context.Context, tmpl string, resolver SecretResolver) (s
 		tmpl = resolved
 	}
 
-	// Then, parse as a template if it contains template syntax
-	if !isTemplateString(tmpl) {
-		return tmpl, nil
+	return RenderTemplate(tmpl)
+}
+
+// RenderTemplate expands the predefined date templates ({{ Today "..." }},
+// {{ SubtractDays N "..." }}) in s and returns the result. Strings without
+// template syntax are returned unchanged. Unlike ParseTemplate it performs no
+// secret resolution, so it is safe for strings that legitimately contain "://"
+// (e.g. JavaScript calling https:// APIs).
+func RenderTemplate(s string) (string, error) {
+	if !isTemplateString(s) {
+		return s, nil
 	}
 
 	funcs := template.FuncMap{
@@ -56,7 +64,7 @@ func ParseTemplate(ctx context.Context, tmpl string, resolver SecretResolver) (s
 		"SubtractDays": SubtractDays,
 	}
 
-	t, err := template.New("tmpl").Funcs(funcs).Parse(tmpl)
+	t, err := template.New("tmpl").Funcs(funcs).Parse(s)
 	if err != nil {
 		return "", fmt.Errorf("error parsing template: %w", err)
 	}

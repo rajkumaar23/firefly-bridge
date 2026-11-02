@@ -1014,7 +1014,7 @@ Evaluates arbitrary JavaScript on the current page and discards the return value
 
 Async functions are supported; the step awaits any returned Promise before continuing.
 
-`op://` secret references can be embedded directly inside the JavaScript string and are resolved before evaluation.
+`op://` secret references can be embedded directly inside the JavaScript string and are resolved before evaluation. [Template functions](#template-functions) (`{{ Today "..." }}`, `{{ SubtractDays N "..." }}`) are also expanded in the script — handy for date-range pickers, e.g. `const label = '{{ SubtractDays 30 "January 2006" }}';`.
 
 ```yaml
 - type: evaluate
@@ -1078,7 +1078,7 @@ Steps that produce results (`balance`, `transactions`, `holdings`, `orders`) sti
 
 ## Template Functions
 
-The `value` field in [`send_keys`](#send_keys) and [`set_value`](#set_value) steps supports Go text/template syntax. Templates are processed after secret resolution. Use `{{ }}` delimiters.
+The `value` field in [`send_keys`](#send_keys) and [`set_value`](#set_value) steps, and the JavaScript string in [`evaluate`](#evaluate), [`balance`](#balance) (evaluate form) and [`skip_remaining_if`](#skip_remaining_if) steps, support Go text/template syntax. Templates are processed after secret resolution. Use `{{ }}` delimiters.
 
 ### `Today`
 
