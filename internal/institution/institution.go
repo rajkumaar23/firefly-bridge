@@ -3,6 +3,7 @@ package institution
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/rajkumaar23/firefly-bridge/internal/chromedp"
 	"github.com/rajkumaar23/firefly-bridge/internal/firefly"
@@ -89,6 +90,13 @@ type Institution struct {
 	LoginFlow  []chromedp.BrowserStep `yaml:"login" validate:"min=1,dive"`
 	LogoutFlow []chromedp.BrowserStep `yaml:"logout" validate:"omitempty,dive"`
 	Accounts   []Account              `yaml:"accounts" validate:"min=1,dive"`
+	// MinSyncInterval is the minimum duration that must elapse after a
+	// successful sync of this institution before another one runs (Go
+	// duration string, e.g. "336h" for ~twice a month; Go has no day unit).
+	// It raises the global SkipWindow floor for this institution only; runs
+	// inside the interval are skipped and do not count. -force and
+	// -institution bypass it. 0 (default) means SkipWindow only.
+	MinSyncInterval time.Duration `yaml:"min_sync_interval" validate:"omitempty,min=0"`
 }
 
 func (i *Institution) Login(cdp *chromedp.ChromeDP) error {

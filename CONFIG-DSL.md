@@ -349,6 +349,7 @@ institutions:
 | `name` | string | yes | Human-readable institution name. Used in logs and with the `-institution` flag. |
 | `login` | array of [steps](#browser-step-reference) | yes (min 1) | Steps executed once to authenticate with the institution. The browser session persists for all accounts under this institution. |
 | `logout` | array of [steps](#browser-step-reference) | no | Optional steps executed once, after all of the institution's accounts have been synced, to sign out of the site and tear the session down. Runs even when some accounts failed (a live session is exactly what must not linger); skipped entirely when login failed. A failed logout is logged as a warning and never fails the run. Omit it to keep the session alive in the persistent browser profile between runs. |
+| `min_sync_interval` | Go duration string | no | Minimum time that must elapse after a **successful** sync before this institution runs again, e.g. `336h` (~twice a month; Go has no day unit). Raises the global 1-hour cooldown floor for this institution only — intended for institutions whose data changes rarely (e.g. CDs that pay interest at month end), so a routine full-`ff` run costs nothing there. Runs inside the interval are skipped and do not update the timestamp; `-force` and `-institution <name>` bypass it. Default: unset (global cooldown only). |
 | `accounts` | array | yes (min 1) | List of accounts to sync within this institution. |
 
 ---

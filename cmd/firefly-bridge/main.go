@@ -298,8 +298,13 @@ func run() int {
 		forceThis := *force || *onlyInstitution == i.Name
 		if !forceThis {
 			if lastRun, ok := runState.Institutions[i.Name]; ok {
-				if age := time.Since(lastRun); age < state.SkipWindow {
+				age := time.Since(lastRun)
+				if age < state.SkipWindow {
 					iLog.Infof("skipping, last processed %s ago", age.Round(time.Second))
+					continue
+				}
+				if i.MinSyncInterval > 0 && age < i.MinSyncInterval {
+					iLog.Infof("skipping, min_sync_interval %s not elapsed (last processed %s ago)", i.MinSyncInterval, age.Round(time.Minute))
 					continue
 				}
 			}
