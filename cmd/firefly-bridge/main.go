@@ -299,12 +299,23 @@ func run() int {
 		if !forceThis {
 			if lastRun, ok := runState.Institutions[i.Name]; ok {
 				age := time.Since(lastRun)
-				if age < state.SkipWindow {
-					iLog.Infof("skipping, last processed %s ago", age.Round(time.Second))
-					continue
+				// Effective throttle: SkipWindow default < global
+				// min_sync_interval < per-institution override (each
+				// level fully replaces the one below it, so an
+				// institution may loosen the fleet-wide interval too).
+				interval := state.SkipWindow
+				if cfg.MinSyncInterval > 0 {
+					interval = cfg.MinSyncInterval
 				}
-				if i.MinSyncInterval > 0 && age < i.MinSyncInterval {
-					iLog.Infof("skipping, min_sync_interval %s not elapsed (last processed %s ago)", i.MinSyncInterval, age.Round(time.Minute))
+				if i.MinSyncInterval > 0 {
+					interval = i.MinSyncInterval
+				}
+				if age < interval {
+					if i.MinSyncInterval > 0 || cfg.MinSyncInterval > 0 {
+						iLog.Infof("skipping, min_sync_interval %s not elapsed (last processed %s ago, next run allowed in %s)", interval, age.Round(time.Minute), (interval - age).Round(time.Minute))
+					} else {
+						iLog.Infof("skipping, last processed %s ago", age.Round(time.Second))
+					}
 					continue
 				}
 			}

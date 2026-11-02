@@ -29,11 +29,16 @@ type FireflyConfig struct {
 }
 
 type Config struct {
-	Firefly         FireflyConfig             `yaml:"firefly" validate:"required"`
-	Secrets         *secrets.SecretsConfig    `yaml:"secrets,omitempty"`
-	AI              *ai.Config                `yaml:"ai,omitempty"`
-	BrowserExecPath string                    `yaml:"browser_exec_path" validate:"file"`
-	Timezone        string                    `yaml:"timezone,omitempty"`
+	Firefly         FireflyConfig          `yaml:"firefly" validate:"required"`
+	Secrets         *secrets.SecretsConfig `yaml:"secrets,omitempty"`
+	AI              *ai.Config             `yaml:"ai,omitempty"`
+	BrowserExecPath string                 `yaml:"browser_exec_path" validate:"file"`
+	Timezone        string                 `yaml:"timezone,omitempty"`
+	// MinSyncInterval is the fleet-wide minimum time between successful
+	// syncs of any institution (Go duration string, e.g. "336h"). It
+	// defaults to state.SkipWindow when unset, and is overridden per
+	// institution by Institution.MinSyncInterval.
+	MinSyncInterval time.Duration             `yaml:"min_sync_interval" validate:"omitempty,min=0"`
 	Institutions    []institution.Institution `yaml:"institutions" validate:"min=1,dive"`
 	Vendors         []vendor.Vendor           `yaml:"vendors,omitempty" validate:"omitempty,dive"`
 }
