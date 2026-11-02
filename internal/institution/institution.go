@@ -93,10 +93,10 @@ type Institution struct {
 	// MinSyncInterval is the minimum duration that must elapse after a
 	// successful sync of this institution before another one runs (Go
 	// duration string, e.g. "336h" for ~twice a month; Go has no day
-	// unit). It overrides the fleet-wide Config.MinSyncInterval for this
-	// institution, in either direction; when both are unset the global
-	// SkipWindow default applies. Runs inside the interval are skipped
-	// and do not count. -force and -institution bypass it.
+	// unit). It fully replaces the fleet-wide Config.MinSyncInterval for
+	// this institution, in either direction; when neither is set the
+	// institution syncs on every invocation. Runs inside the interval
+	// are skipped and do not count. -force and -institution bypass it.
 	MinSyncInterval time.Duration `yaml:"min_sync_interval" validate:"omitempty,min=0"`
 }
 

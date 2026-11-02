@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-// SkipWindow is the minimum time that must elapse since an institution was last
-// successfully processed before it will be processed again.
-const SkipWindow = time.Hour
-
 // ProcessingState tracks the last successful processing time for each
 // institution and, at a finer grain, for each account within an institution.
 type ProcessingState struct {

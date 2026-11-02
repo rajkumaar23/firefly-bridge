@@ -103,9 +103,9 @@ func run() int {
 	var ffBridgeDebug = flag.Bool("debug", false, "enable firefly-bridge debug logs")
 	var configPath = flag.String("config", "config.yaml", "path to the configuration file")
 	var statePath = flag.String("state", datadir.StateFile(), "path to the state file (default: data dir)")
-	var force = flag.Bool("force", false, "bypass the per-institution cooldown and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
+	var force = flag.Bool("force", false, "bypass the per-institution min_sync_interval and the per-account balance-unchanged skip, forcing a full sync of every institution and account")
 	var forceSyncDays = flag.Int("sync-days", 10, "force a full transaction CSV sync for an account after this many days, even if its scraped balance matches the Firefly balance")
-	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses cooldown and balance-unchanged checks for that institution")
+	var onlyInstitution = flag.String("institution", "", "run only the institution with this name, skipping all others; also bypasses min_sync_interval and balance-unchanged checks for that institution")
 	var skipInstitutions = flag.String("skip", "", "comma-separated list of institution names to skip; all other institutions run normally")
 	var csvDebug = flag.Bool("csv-debug", false, "log every parsed CSV row with its row number to help diagnose parsing issues")
 	var vendorsFlag = flag.String("vendors", "", "scrape configured vendors' order history to categorize their charges from what was actually bought; \"all\" or a comma-separated list of vendor names, empty disables vendor scraping")
@@ -299,23 +299,15 @@ func run() int {
 		if !forceThis {
 			if lastRun, ok := runState.Institutions[i.Name]; ok {
 				age := time.Since(lastRun)
-				// Effective throttle: SkipWindow default < global
-				// min_sync_interval < per-institution override (each
-				// level fully replaces the one below it, so an
-				// institution may loosen the fleet-wide interval too).
-				interval := state.SkipWindow
-				if cfg.MinSyncInterval > 0 {
-					interval = cfg.MinSyncInterval
-				}
+				// min_sync_interval is the only throttle: the
+				// per-institution value wins, else the fleet-wide root
+				// value, else the institution runs on every invocation.
+				interval := cfg.MinSyncInterval
 				if i.MinSyncInterval > 0 {
 					interval = i.MinSyncInterval
 				}
-				if age < interval {
-					if i.MinSyncInterval > 0 || cfg.MinSyncInterval > 0 {
-						iLog.Infof("skipping, min_sync_interval %s not elapsed (last processed %s ago, next run allowed in %s)", interval, age.Round(time.Minute), (interval - age).Round(time.Minute))
-					} else {
-						iLog.Infof("skipping, last processed %s ago", age.Round(time.Second))
-					}
+				if interval > 0 && age < interval {
+					iLog.Infof("skipping, min_sync_interval %s not elapsed (last processed %s ago, next run allowed in %s)", interval, age.Round(time.Minute), (interval - age).Round(time.Minute))
 					continue
 				}
 			}
