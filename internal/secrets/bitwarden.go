@@ -178,12 +178,15 @@ func (p *BitwardenProvider) run(ctx context.Context, args ...string) (string, er
 	// --nointeraction prevents the CLI from ever blocking on a stdin prompt.
 	fullArgs := append([]string{}, args...)
 	fullArgs = append(fullArgs, "--nointeraction")
-	if p.session != "" {
-		fullArgs = append(fullArgs, "--session", p.session)
-	}
 
 	cmd := exec.CommandContext(ctx, p.bwPath, fullArgs...)
 	cmd.Env = p.env
+	// The unlock key travels in BW_SESSION, not argv: an argv element is
+	// world-readable via /proc/<pid>/cmdline, the process environment is
+	// owner-only. The bw CLI reads BW_SESSION natively.
+	if p.session != "" {
+		cmd.Env = append(append([]string{}, p.env...), "BW_SESSION="+p.session)
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -59,9 +59,31 @@ func NewChromeDP(ctx context.Context, logger *logrus.Logger, browserExecPath str
 
 	var debugFn func(s string, i ...interface{})
 	if debug {
+		// The steps type vault-resolved credentials through the CDP input
+		// domain: with raw debugging on, the login password would land
+		// verbatim in the debug log (cron logs, scrollback, bug reports).
+		// Redact the message bodies of the methods that carry typed or
+		// injected values instead of logging them raw.
+		redactedMethods := []string{
+			"Input.dispatchKeyEvent",
+			"Input.insertText",
+			"Input.dispatchMouseEvent",
+			"Input.dispatchTouchEvent",
+			"DOM.setNodeValue",
+			"DOM.setAttributeValue",
+			"Runtime.evaluate",
+			"Runtime.callFunctionOn",
+			"Page.addScriptToEvaluateOnNewDocument",
+			"Page.handleJavaScriptDialog",
+		}
 		debugFn = func(s string, i ...interface{}) {
+			for _, m := range redactedMethods {
+				if strings.Contains(s, m) {
+					logger.Debugf("[redacted CDP message: %s]", m)
+					return
+				}
+			}
 			logger.Debugf(s, i...)
-
 		}
 	}
 

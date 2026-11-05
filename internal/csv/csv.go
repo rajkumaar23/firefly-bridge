@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -228,17 +229,29 @@ func (p *Parser) Parse(path string) ([]*firefly.TransactionSplitStore, error) {
 }
 
 func (p *Parser) ParseFromExcel(path string, worksheetIndex int, password string) ([]*firefly.TransactionSplitStore, error) {
-	xlFile := p.getExcelFile(path, password)
+	xlFile, err := p.getExcelFile(path, password)
+	if err != nil {
+		return nil, fmt.Errorf("error opening excel file: %w", err)
+	}
+	defer func() {
+		if cerr := xlFile.Close(); cerr != nil {
+			p.logger.Errorf("error closing excel file: %s", cerr.Error())
+		}
+	}()
 
 	worksheets := xlFile.GetSheetList()
-	if len(worksheets) < 1 {
-		return nil, fmt.Errorf("no worksheets found in the file")
+	// The index is config-derived but the worksheet count is decided by the
+	// downloaded file: a bank server (or a page that steers the download)
+	// controls both name and count, so bound-check rather than panic.
+	if worksheetIndex < 0 || worksheetIndex >= len(worksheets) {
+		return nil, fmt.Errorf("worksheet index %d out of range: file has %d worksheet(s)", worksheetIndex+1, len(worksheets))
 	}
 
-	csvPath, err := p.createCSVFile(xlFile, worksheets[worksheetIndex])
+	csvPath, err := p.createCSVFile(xlFile, worksheets[worksheetIndex], filepath.Dir(path))
 	if err != nil {
 		return nil, fmt.Errorf("error creating csv file: %w", err)
 	}
+	defer os.Remove(csvPath)
 
 	if err := os.Remove(path); err != nil {
 		p.logger.Errorf("error deleting excel file: %s", err.Error())
@@ -335,31 +348,30 @@ func (p *Parser) getCategory(record []string) (string, error) {
 }
 
 // Helpers to convert XLS(X) files to CSV
-func (p *Parser) getExcelFile(fileName string, password string) *excelize.File {
+func (p *Parser) getExcelFile(fileName string, password string) (*excelize.File, error) {
 	xlFile, xlErr := excelize.OpenFile(fileName, excelize.Options{Password: password})
 	if xlErr != nil {
-		panic(xlErr)
+		return nil, xlErr
 	}
-	defer func() {
-		if xlErr := xlFile.Close(); xlErr != nil {
-			panic(xlErr)
-		}
-	}()
-
-	return xlFile
+	return xlFile, nil
 }
 
-func (p *Parser) createCSVFile(xlFile *excelize.File, worksheet string) (string, error) {
+func (p *Parser) createCSVFile(xlFile *excelize.File, worksheet string, dir string) (string, error) {
 	allRows, err := xlFile.GetRows(worksheet)
 	if err != nil {
 		return "", fmt.Errorf("failed to get rows: %w", err)
 	}
 
-	filePath := worksheet + ".csv"
-	csvFile, err := os.Create(filePath)
+	// The worksheet name is attacker-controlled content inside the downloaded
+	// workbook: an absolute path or '../../..' sheet name would have written
+	// (and truncated) any user-owned file via worksheet + ".csv". Never use
+	// it as path material - write a uniquely named temp file beside the
+	// download instead.
+	csvFile, err := os.CreateTemp(dir, "firefly-sheet-*.csv")
 	if err != nil {
 		return "", fmt.Errorf("error creating csv file: %w", err)
 	}
+	filePath := csvFile.Name()
 
 	defer func() {
 		if err := csvFile.Close(); err != nil {
